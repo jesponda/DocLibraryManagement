@@ -98,6 +98,7 @@ internal sealed class RevisionDocumentoConfig : IEntityTypeConfiguration<Revisio
     {
         b.HasKey(x => x.Id);
         b.Ignore(x => x.Etiqueta);
+        b.Property(x => x.RowVersion).IsRowVersion();
         b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
         b.Property(x => x.MotivoCambio).HasMaxLength(1000).IsRequired();
         b.Property(x => x.DescripcionCambio).HasMaxLength(4000);
@@ -123,6 +124,55 @@ internal sealed class RevisionDocumentoConfig : IEntityTypeConfiguration<Revisio
         b.HasIndex(x => x.DocumentoId, "UX_Revision_UnicaAbierta")
             .IsUnique()
             .HasFilter("[Estado] IN ('Borrador', 'EnRevision', 'EnAprobacion', 'Aprobado')");
+    }
+}
+
+internal sealed class PasoPlantillaConfig : IEntityTypeConfiguration<PasoPlantilla>
+{
+    public void Configure(EntityTypeBuilder<PasoPlantilla> b)
+    {
+        b.ToTable("PasosPlantilla");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Clase).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.Nombre).HasMaxLength(100).IsRequired();
+        b.HasOne(x => x.TipoDocumento).WithMany().HasForeignKey(x => x.TipoDocumentoId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.TipoDocumentoId, x.Orden }).IsUnique();
+    }
+}
+
+internal sealed class InstanciaFlujoConfig : IEntityTypeConfiguration<InstanciaFlujo>
+{
+    public void Configure(EntityTypeBuilder<InstanciaFlujo> b)
+    {
+        b.ToTable("InstanciasFlujo");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
+        b.HasOne(x => x.Revision).WithMany().HasForeignKey(x => x.RevisionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.IniciadoPor).WithMany().HasForeignKey(x => x.IniciadoPorId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.RevisionId, x.Numero }).IsUnique();
+
+        // Una sola ejecución del flujo activa por revisión, garantizada en BD.
+        b.HasIndex(x => x.RevisionId, "UX_Flujo_UnicoEnCurso")
+            .IsUnique()
+            .HasFilter("[Estado] = 'EnCurso'");
+    }
+}
+
+internal sealed class PasoInstanciaConfig : IEntityTypeConfiguration<PasoInstancia>
+{
+    public void Configure(EntityTypeBuilder<PasoInstancia> b)
+    {
+        b.ToTable("PasosInstancia");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Clase).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.Nombre).HasMaxLength(100).IsRequired();
+        b.Property(x => x.Comentario).HasMaxLength(2000);
+        b.HasOne(x => x.Instancia).WithMany(i => i.Pasos).HasForeignKey(x => x.InstanciaFlujoId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.AsignadoA).WithMany().HasForeignKey(x => x.AsignadoAId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.DecididoPor).WithMany().HasForeignKey(x => x.DecididoPorId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.InstanciaFlujoId, x.Orden }).IsUnique();
+        b.HasIndex(x => x.AsignadoAId);
     }
 }
 

@@ -1,8 +1,12 @@
+using DocLibraryManagement.Application.Archivos;
 using DocLibraryManagement.Application.Catalogo;
 using DocLibraryManagement.Application.Documentos;
+using DocLibraryManagement.Application.Flujo;
 using DocLibraryManagement.Application.Usuarios;
+using DocLibraryManagement.Infrastructure.Archivos;
 using DocLibraryManagement.Infrastructure.Catalogo;
 using DocLibraryManagement.Infrastructure.Documentos;
+using DocLibraryManagement.Infrastructure.Flujo;
 using DocLibraryManagement.Infrastructure.Persistencia;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -23,9 +27,14 @@ public static class DependencyInjection
         services.AddDbContextFactory<AppDbContext>(options => options.UseSqlServer(connectionString));
         services.TryAddSingleton(TimeProvider.System);
 
+        services.Configure<ArchivosOptions>(configuration.GetSection(ArchivosOptions.Seccion));
+        services.AddSingleton<IFileStore, FileStoreEnDisco>();
+
         services.AddScoped<IUsuarioSincronizador, UsuarioSincronizador>();
         services.AddScoped<ICatalogoService, CatalogoService>();
         services.AddScoped<IDocumentoService, DocumentoService>();
+        services.AddScoped<IRevisionService, RevisionService>();
+        services.AddScoped<IFlujoService, FlujoService>();
 
         return services;
     }

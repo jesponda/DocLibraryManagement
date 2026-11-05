@@ -12,6 +12,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SubAreaTipoDocumento> SubAreasTiposDocumento => Set<SubAreaTipoDocumento>();
     public DbSet<Documento> Documentos => Set<Documento>();
     public DbSet<RevisionDocumento> Revisiones => Set<RevisionDocumento>();
+    public DbSet<PasoPlantilla> PasosPlantilla => Set<PasoPlantilla>();
+    public DbSet<InstanciaFlujo> InstanciasFlujo => Set<InstanciaFlujo>();
+    public DbSet<PasoInstancia> PasosInstancia => Set<PasoInstancia>();
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<EventoAuditoria> Auditoria => Set<EventoAuditoria>();
 

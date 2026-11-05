@@ -1,5 +1,5 @@
 ﻿@page "/documentos/{Id:int}"
-@attribute [Authorize(Roles = "Autor,Administrador,Auditor")]
+@attribute [Authorize(Roles = "Autor,Administrador,Auditor,Revisor,Aprobador")]
 @rendermode InteractiveServer
 @inherits PaginaBase
 @using DocLibraryManagement.Application.Catalogo
@@ -56,22 +56,31 @@ else
 
     <h2 class="h5">Revisiones</h2>
     <table class="table table-sm align-middle" style="max-width: 50rem">
-        <thead><tr><th>Revisión</th><th>Estado</th><th>Motivo</th><th>Autor</th><th>Fecha</th></tr></thead>
+        <thead><tr><th>Revisión</th><th>Estado</th><th>Motivo</th><th>Autor</th><th>Fecha</th><th></th></tr></thead>
         <tbody>
         @foreach (var r in doc.Revisiones)
         {
-            <tr>
+            <tr class="@(r.Id == revisionId ? "table-active" : "")">
                 <td>@r.Etiqueta</td>
                 <td><span class="badge text-bg-secondary">@Presentacion.NombreEstado(r.Estado)</span></td>
                 <td>@r.MotivoCambio</td>
                 <td>@r.Autor</td>
                 <td>@r.FechaCreacionUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                <td>
+                    @if (r.Id != revisionId)
+                    {
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => revisionId = r.Id">Ver</button>
+                    }
+                </td>
             </tr>
         }
         </tbody>
     </table>
 
-    <p class="text-muted">La carga de archivos y el flujo de revisión y aprobación llegan en el siguiente tramo.</p>
+    @if (revisionId != 0)
+    {
+        <PanelRevision RevisionId="@revisionId" OnCambio="RecargarAsync" />
+    }
 }
 
 @code {
@@ -80,13 +89,30 @@ else
     private DocumentoDetalleDto? doc;
     private List<SubAreaDto> subAreas = [];
     private int subAreaElegida;
+    private int revisionId;
     private bool puedeEditar;
     private bool cargando = true;
 
     protected override async Task OnParametersSetAsync()
     {
         cargando = true;
+        revisionId = 0;
+        await CargarAsync();
+        cargando = false;
+    }
+
+    /// <summary>Recarga el documento conservando la revisión que se estaba viendo.</summary>
+    private async Task RecargarAsync()
+    {
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    private async Task CargarAsync()
+    {
+        var seleccionada = revisionId;
         doc = null;
+
         await EjecutarAsync(async a =>
         {
             doc = await Servicio.ObtenerAsync(a, Id);
@@ -99,8 +125,10 @@ else
             var area = (await Catalogo.ListarAreasAsync()).FirstOrDefault(x => x.Id == doc.AreaId);
             subAreas = [.. area?.SubAreas.Where(s => s.Activa) ?? []];
             subAreaElegida = doc.SubAreaId ?? 0;
+
+            // La revisión más reciente es la que importa por defecto.
+            revisionId = doc.Revisiones.Any(r => r.Id == seleccionada) ? seleccionada : doc.Revisiones.FirstOrDefault()?.Id ?? 0;
         });
-        cargando = false;
     }
 
     private async Task CambiarSubAreaAsync(ChangeEventArgs e)
@@ -108,7 +136,7 @@ else
         var nueva = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
         if (await EjecutarAsync(a => Servicio.CambiarSubAreaAsync(a, Id, nueva == 0 ? null : nueva), "Subárea actualizada."))
         {
-            await OnParametersSetAsync();
+            await CargarAsync();
         }
     }
 }

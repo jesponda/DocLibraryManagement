@@ -78,9 +78,16 @@ public class RevisionDocumento
 
     public DateTime FechaCreacionUtc { get; set; }
 
+    /// <summary>Quien elabora la revisión. No puede revisarla ni aprobarla (separación de funciones).</summary>
     public Guid AutorId { get; set; }
 
     public Usuario? Autor { get; set; }
+
+    /// <summary>
+    /// Detecta ediciones simultáneas: si el flujo cambia el estado mientras alguien sube un archivo,
+    /// una de las dos operaciones falla en lugar de pisar a la otra.
+    /// </summary>
+    public byte[]? RowVersion { get; set; }
 
     public string Etiqueta => FormatearEtiqueta(Mayor, Menor);
 

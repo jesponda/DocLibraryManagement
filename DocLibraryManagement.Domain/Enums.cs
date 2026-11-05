@@ -20,6 +20,9 @@ public enum EstadoRevision
     Aprobado = 4,
     Vigente = 5,
     Obsoleto = 6,
+
+    /// <summary>Borrador descartado antes de su emisión. No cuenta como revisión abierta.</summary>
+    Cancelado = 7,
 }
 
 /// <summary>Estado global del documento.</summary>

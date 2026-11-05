@@ -13,6 +13,7 @@ public static class Presentacion
         EstadoRevision.Aprobado => "Aprobado",
         EstadoRevision.Vigente => "Vigente",
         EstadoRevision.Obsoleto => "Obsoleto",
+        EstadoRevision.Cancelado => "Cancelado",
         _ => estado.ToString(),
     };
 

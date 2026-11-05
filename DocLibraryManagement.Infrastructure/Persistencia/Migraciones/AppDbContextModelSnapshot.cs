@@ -177,6 +177,134 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.ToTable("Auditoria", (string)null);
                 });
 
+            modelBuilder.Entity("DocLibraryManagement.Domain.InstanciaFlujo", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("FechaFinUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("FechaInicioUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("IniciadoPorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Numero")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RevisionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IniciadoPorId");
+
+                    b.HasIndex("RevisionId", "Numero")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "RevisionId" }, "UX_Flujo_UnicoEnCurso")
+                        .IsUnique()
+                        .HasFilter("[Estado] = 'EnCurso'");
+
+                    b.ToTable("InstanciasFlujo", (string)null);
+                });
+
+            modelBuilder.Entity("DocLibraryManagement.Domain.PasoInstancia", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<Guid>("AsignadoAId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Clase")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Comentario")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid?>("DecididoPorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("FechaDecisionUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("InstanciaFlujoId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AsignadoAId");
+
+                    b.HasIndex("DecididoPorId");
+
+                    b.HasIndex("InstanciaFlujoId", "Orden")
+                        .IsUnique();
+
+                    b.ToTable("PasosInstancia", (string)null);
+                });
+
+            modelBuilder.Entity("DocLibraryManagement.Domain.PasoPlantilla", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Clase")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TipoDocumentoId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TipoDocumentoId", "Orden")
+                        .IsUnique();
+
+                    b.ToTable("PasosPlantilla", (string)null);
+                });
+
             modelBuilder.Entity("DocLibraryManagement.Domain.RevisionDocumento", b =>
                 {
                     b.Property<int>("Id")
@@ -230,6 +358,11 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                         .IsRequired()
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<string>("RutaArchivoFuente")
                         .HasMaxLength(500)
@@ -437,6 +570,62 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.Navigation("TipoDocumento");
                 });
 
+            modelBuilder.Entity("DocLibraryManagement.Domain.InstanciaFlujo", b =>
+                {
+                    b.HasOne("DocLibraryManagement.Domain.Usuario", "IniciadoPor")
+                        .WithMany()
+                        .HasForeignKey("IniciadoPorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DocLibraryManagement.Domain.RevisionDocumento", "Revision")
+                        .WithMany()
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("IniciadoPor");
+
+                    b.Navigation("Revision");
+                });
+
+            modelBuilder.Entity("DocLibraryManagement.Domain.PasoInstancia", b =>
+                {
+                    b.HasOne("DocLibraryManagement.Domain.Usuario", "AsignadoA")
+                        .WithMany()
+                        .HasForeignKey("AsignadoAId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DocLibraryManagement.Domain.Usuario", "DecididoPor")
+                        .WithMany()
+                        .HasForeignKey("DecididoPorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("DocLibraryManagement.Domain.InstanciaFlujo", "Instancia")
+                        .WithMany("Pasos")
+                        .HasForeignKey("InstanciaFlujoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AsignadoA");
+
+                    b.Navigation("DecididoPor");
+
+                    b.Navigation("Instancia");
+                });
+
+            modelBuilder.Entity("DocLibraryManagement.Domain.PasoPlantilla", b =>
+                {
+                    b.HasOne("DocLibraryManagement.Domain.TipoDocumento", "TipoDocumento")
+                        .WithMany()
+                        .HasForeignKey("TipoDocumentoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("TipoDocumento");
+                });
+
             modelBuilder.Entity("DocLibraryManagement.Domain.RevisionDocumento", b =>
                 {
                     b.HasOne("DocLibraryManagement.Domain.Usuario", "Autor")
@@ -496,6 +685,11 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
             modelBuilder.Entity("DocLibraryManagement.Domain.Documento", b =>
                 {
                     b.Navigation("Revisiones");
+                });
+
+            modelBuilder.Entity("DocLibraryManagement.Domain.InstanciaFlujo", b =>
+                {
+                    b.Navigation("Pasos");
                 });
 
             modelBuilder.Entity("DocLibraryManagement.Domain.SubArea", b =>

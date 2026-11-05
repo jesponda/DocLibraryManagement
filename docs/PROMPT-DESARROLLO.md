@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Versión del documento | 1.3 |
+| Versión del documento | 1.4 |
 | Fecha | 2026-11-05 |
 | Estado | Aprobado para iniciar Fase 1 |
 | Norma base | ISO 9001:2015 cláusula 7.5 (Información documentada), estructura Annex SL |
@@ -223,7 +223,7 @@ Cada fase debe terminar con: código compilando, pruebas pasando, resumen de lo 
 
 **Entrega en tres tramos**, con pausa de revisión al final de cada uno:
 - **2A – Catálogos y creación de documentos** *(entregado)*: catálogos configurables, creación con código automático (primera revisión Rev.00 en Borrador), listado y detalle básicos, copia de roles del usuario.
-- **2B – Borradores, archivos y flujo**: carga de archivos (7.5), plantillas de flujo por tipo (7.2), asignación de personas, decisiones y rechazos.
+- **2B – Borradores, archivos y flujo** *(entregado, pendiente de validación del usuario)*: carga de archivos (7.5), plantillas de flujo por tipo (7.2), asignación de personas, decisiones, rechazos, reasignación y cancelación del flujo.
 - **2C – Publicación y ciclo de vida**: publicación, revisión mayor y menor, vigencia diferida, obsolescencia automática y retiro (7.1, 7.3). La transición diferida necesita un job; su lógica se construye aquí y el job que la dispara en la Fase 4.
 
 **Decisiones de diseño de la Fase 2:**
@@ -232,6 +232,20 @@ Cada fase debe terminar con: código compilando, pruebas pasando, resumen de lo 
 - **`IDbContextFactory`** en lugar de un `DbContext` por circuito (Blazor Server). Cada operación crea y libera el suyo.
 - **Consecutivo de documento:** se calcula como máximo + 1 y se confía en el índice único; ante colisión, reintenta (hasta 15 veces con espera aleatoria). Los documentos nunca se borran, por lo que un número no se reutiliza.
 - **La IP en la bitácora es de mejor esfuerzo:** en Blazor Server el `HttpContext` solo existe en la solicitud inicial del circuito.
+
+**Decisiones del tramo 2B:**
+- **Plantilla de flujo:** lista ordenada de etapas de tipo *Revisión* (rol Revisor) o *Aprobación* (rol Aprobador), máximo 10. **La última etapa debe ser una aprobación.** Al enviar a revisión se *copia* la plantilla; cambiarla después no afecta flujos en curso. Cada envío es una instancia numerada (#1, #2…); un rechazo o cancelación cierra la instancia y un reenvío abre otra, conservando el historial.
+- **Etapas secuenciales.** El estado de la revisión sigue a la etapa vigente (*En revisión* / *En aprobación*); al aprobar la última pasa a *Aprobado*. Esa transición a *Vigente* es del tramo 2C.
+- **Separación de funciones:** el autor de la revisión (`AutorId`) no puede ser asignado ni decidir en su flujo; se valida al iniciar, al reasignar y al decidir.
+- **Revalidación al decidir:** el rol se comprueba con los roles *vivos* del Actor (grupos de AD), no con la copia guardada; además solo decide la persona asignada, en su turno.
+- **Rechazo:** exige comentario, devuelve la revisión a *Borrador* y marca *Omitidas* las etapas restantes. El comentario se muestra al autor.
+- **Reasignar / cancelar flujo:** las hace quien edita en el área (o el Administrador), con motivo obligatorio y bitácora. Cancelar devuelve la revisión a *Borrador*.
+- **Cancelar un documento nuevo** (primera revisión aún en borrador): la revisión pasa al nuevo estado **Cancelado** y el documento a **Retirado**; el consecutivo nunca se reutiliza. Para revisiones posteriores a la primera, el descarte de borradores se define en el tramo 2C.
+- **Archivos:** PDF obligatorio para enviar a revisión; fuente editable opcional. Se valida la **extensión y la firma real** del contenido (un ejecutable renombrado a `.pdf` se rechaza), se guarda con nombre generado (GUID) en `año/mes/` fuera de `wwwroot`, con SHA-256, escritura atómica (temporal + mover) y límite de tamaño configurable (`Archivos:TamanoMaximoMb`, 50 por defecto). Reemplazar el archivo de un borrador borra el anterior. Los archivos de una revisión que salió de *Borrador* son inmutables.
+- **Descarga** por `GET /archivos/{revisionId}/{pdf|fuente}`: exige sesión, revalida permisos y **verifica el hash en cada descarga**; si no coincide (o el archivo falta) no lo entrega y deja evento en la bitácora. El PDF lo ven gestores (Administrador, Auditor, Autores del área) y quienes tengan una etapa asignada; la **fuente solo los gestores**; lo *Vigente* es de lectura abierta. Descargar una revisión obsoleta queda registrado.
+- **Concurrencia:** `RowVersion` en la revisión (una edición y un cambio de flujo simultáneos no se pisan) e índice único filtrado `UX_Flujo_UnicoEnCurso` (un solo flujo en curso por revisión).
+- **Visibilidad:** quien tiene (o tuvo) una etapa asignada en un documento puede ver el documento, su flujo y su PDF aunque no sea gestor.
+- **Pendiente de producción:** definir la ruta real del almacén (`Archivos:RutaBase`, local o de red) y sus permisos y respaldo; hoy, vacía, usa `App_Data/archivos` junto a la aplicación.
 
 ### Fase 3 – Consulta
 - Lista maestra (filtros, exportación a Excel/CSV).
@@ -298,6 +312,7 @@ Pendientes de datos reales (no bloquean la Fase 1, bloquean la puesta en producc
 | 1.1 | 2026-11-05 | Catálogo configurable Área → Subárea con tipos de documento asociados (6.1.1); el resto de atributos se define sobre la marcha. |
 | 1.2 | 2026-11-05 | Fase 1 construida. Nombres de proyectos alineados con el código (sección 4). Se documenta el modo de autenticación de desarrollo y la verificación pendiente de Windows Auth (sección 10). |
 | 1.3 | 2026-11-05 | Tramo 2A construido (catálogos y creación de documentos). Se documentan los tramos de la Fase 2 y sus decisiones de diseño. |
+| 1.4 | 2026-11-05 | Tramo 2B construido (archivos, plantillas de flujo, decisiones). Nuevo estado de revisión *Cancelado*. Decisiones del tramo documentadas. |
 
 ## 14. Referencias
 

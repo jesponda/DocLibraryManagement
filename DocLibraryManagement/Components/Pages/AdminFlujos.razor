@@ -1,0 +1,148 @@
+@page "/administracion/flujos"
+@attribute [Authorize(Policy = Politicas.PuedeAdministrar)]
+@rendermode InteractiveServer
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Catalogo
+@using DocLibraryManagement.Application.Flujo
+@using DocLibraryManagement.Domain
+@inject ICatalogoService Catalogo
+@inject IFlujoService Flujo
+
+<PageTitle>Flujos de aprobación</PageTitle>
+
+<h1>Flujos de aprobación</h1>
+<p><a href="administracion">← Administración</a></p>
+
+<Mensajes Error="@Error" Exito="@Exito" />
+
+<p style="max-width: 50rem">
+    Cada tipo de documento define las etapas por las que pasa una revisión antes de aprobarse.
+    <strong>La última etapa debe ser una aprobación.</strong> Los cambios aplican a los envíos nuevos;
+    los flujos que ya están en curso no se modifican.
+</p>
+
+@if (tipos is null)
+{
+    <p>Cargando…</p>
+}
+else if (tipos.Count == 0)
+{
+    <p class="text-muted">Primero crea tipos de documento en <a href="administracion/tipos">Tipos de documento</a>.</p>
+}
+else
+{
+    <div class="mb-3" style="max-width: 32rem">
+        <label class="form-label" for="tipo">Tipo de documento</label>
+        <select id="tipo" class="form-select" value="@tipoId" @onchange="CambiarTipoAsync">
+            <option value="0">Selecciona…</option>
+            @foreach (var t in tipos)
+            {
+                <option value="@t.Id">@t.Codigo – @t.Nombre @(t.Activo ? "" : "(desactivado)")</option>
+            }
+        </select>
+    </div>
+
+    @if (tipoId != 0)
+    {
+        @if (pasos.Count == 0)
+        {
+            <div class="alert alert-warning" style="max-width: 50rem">
+                Este tipo todavía <strong>no tiene flujo</strong>: no se podrán enviar sus documentos a revisión hasta configurarlo.
+            </div>
+        }
+
+        <table class="table table-sm align-middle" style="max-width: 50rem">
+            <thead><tr><th>#</th><th>Tipo de etapa</th><th>Nombre</th><th>Quién decide</th><th></th></tr></thead>
+            <tbody>
+            @for (var i = 0; i < pasos.Count; i++)
+            {
+                var indice = i;
+                var paso = pasos[i];
+                <tr>
+                    <td>@(i + 1)</td>
+                    <td>
+                        <select class="form-select form-select-sm" aria-label="Tipo de etapa @(i + 1)"
+                                value="@((int)paso.Clase)" @onchange="e => CambiarClase(indice, e.Value?.ToString())">
+                            <option value="@((int)TipoPaso.Revision)">Revisión</option>
+                            <option value="@((int)TipoPaso.Aprobacion)">Aprobación</option>
+                        </select>
+                    </td>
+                    <td><input class="form-control form-control-sm" maxlength="100" aria-label="Nombre de la etapa @(i + 1)" @bind="paso.Nombre" /></td>
+                    <td>Rol @paso.Clase.RolRequerido()</td>
+                    <td class="text-nowrap">
+                        <button class="btn btn-sm btn-outline-secondary" disabled="@(i == 0)" @onclick="() => Mover(indice, -1)" aria-label="Subir">↑</button>
+                        <button class="btn btn-sm btn-outline-secondary" disabled="@(i == pasos.Count - 1)" @onclick="() => Mover(indice, 1)" aria-label="Bajar">↓</button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => Quitar(indice)" aria-label="Quitar">✕</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+
+        <div class="mb-3">
+            <button class="btn btn-outline-primary btn-sm" disabled="@(pasos.Count >= ReglasFlujo.MaximoPasos)" @onclick="() => Agregar(TipoPaso.Revision)">+ Revisión</button>
+            <button class="btn btn-outline-primary btn-sm" disabled="@(pasos.Count >= ReglasFlujo.MaximoPasos)" @onclick="() => Agregar(TipoPaso.Aprobacion)">+ Aprobación</button>
+        </div>
+
+        <button class="btn btn-primary" @onclick="GuardarAsync">Guardar flujo</button>
+    }
+}
+
+@code {
+    /// <summary>Copia editable de una etapa (el DTO es inmutable).</summary>
+    private sealed class PasoEditable
+    {
+        public TipoPaso Clase { get; set; }
+
+        public string Nombre { get; set; } = "";
+    }
+
+    private IReadOnlyList<TipoDocumentoDto>? tipos;
+    private int tipoId;
+    private List<PasoEditable> pasos = [];
+
+    protected override async Task OnInitializedAsync() =>
+        tipos = await Catalogo.ListarTiposAsync(incluirInactivos: true);
+
+    private async Task CambiarTipoAsync(ChangeEventArgs e)
+    {
+        tipoId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        Error = Exito = null;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        pasos = tipoId == 0
+            ? []
+            : [.. (await Flujo.ObtenerPlantillaAsync(tipoId)).Select(p => new PasoEditable { Clase = p.Clase, Nombre = p.Nombre })];
+    }
+
+    private void Agregar(TipoPaso clase) =>
+        pasos.Add(new PasoEditable { Clase = clase, Nombre = clase == TipoPaso.Revision ? "Revisión" : "Aprobación" });
+
+    private void Quitar(int indice) => pasos.RemoveAt(indice);
+
+    private void Mover(int indice, int delta)
+    {
+        var destino = indice + delta;
+        (pasos[indice], pasos[destino]) = (pasos[destino], pasos[indice]);
+    }
+
+    private void CambiarClase(int indice, string? valor)
+    {
+        if (int.TryParse(valor, out var v) && Enum.IsDefined((TipoPaso)v))
+        {
+            pasos[indice].Clase = (TipoPaso)v;
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        var dtos = pasos.Select((p, i) => new PasoPlantillaDto(i + 1, p.Clase, p.Nombre)).ToList();
+        if (await EjecutarAsync(a => Flujo.GuardarPlantillaAsync(a, tipoId, dtos), "Flujo guardado."))
+        {
+            await CargarAsync();
+        }
+    }
+}

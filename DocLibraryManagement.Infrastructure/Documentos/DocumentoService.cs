@@ -171,8 +171,10 @@ internal sealed class DocumentoService(IDbContextFactory<AppDbContext> fabrica, 
             return null;
         }
 
-        var puedeVer = actor.EsAdministrador || actor.TieneRol(RolSistema.Auditor) || actor.PuedeEditarEnArea(detalle.CodigoArea);
-        return puedeVer ? detalle : throw new AccesoDenegadoException("No tienes permiso para ver este documento todavía.");
+        // Gestores (Administrador, Auditor, Autores del área) y quienes tengan una etapa asignada en él.
+        return await PermisosDocumento.PuedeVerDocumentoAsync(db, actor, detalle.CodigoArea, detalle.Id, ct)
+            ? detalle
+            : throw new AccesoDenegadoException("No tienes permiso para ver este documento todavía.");
     }
 
     public async Task CambiarSubAreaAsync(Actor actor, int documentoId, int? subAreaId, CancellationToken ct = default)

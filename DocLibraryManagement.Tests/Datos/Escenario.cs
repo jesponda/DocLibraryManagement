@@ -1,6 +1,8 @@
+using DocLibraryManagement.Application.Archivos;
 using DocLibraryManagement.Application.Catalogo;
 using DocLibraryManagement.Application.Comun;
 using DocLibraryManagement.Application.Documentos;
+using DocLibraryManagement.Application.Flujo;
 using DocLibraryManagement.Application.Usuarios;
 using DocLibraryManagement.Domain;
 using DocLibraryManagement.Infrastructure;
@@ -21,13 +23,19 @@ public sealed class Escenario : IDisposable
     private readonly ServiceProvider _sp;
     private readonly IServiceScope _scope;
 
-    public Escenario(BaseDatosFixture bd)
+    public Escenario(BaseDatosFixture bd, int tamanoMaximoMb = 50)
     {
         Bd = bd;
         Reloj = new FakeTimeProvider(new DateTimeOffset(2026, 11, 5, 8, 0, 0, TimeSpan.Zero));
+        RutaArchivos = Path.Combine(Path.GetTempPath(), "doclib-tests", Guid.NewGuid().ToString("N"));
 
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:DefaultConnection"] = bd.Conexion })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = bd.Conexion,
+                ["Archivos:RutaBase"] = RutaArchivos,
+                ["Archivos:TamanoMaximoMb"] = tamanoMaximoMb.ToString(),
+            })
             .Build();
 
         var services = new ServiceCollection();
@@ -46,6 +54,76 @@ public sealed class Escenario : IDisposable
     public IDocumentoService Documentos => _scope.ServiceProvider.GetRequiredService<IDocumentoService>();
 
     public IUsuarioSincronizador Usuarios => _scope.ServiceProvider.GetRequiredService<IUsuarioSincronizador>();
+
+    public IRevisionService Revisiones => _scope.ServiceProvider.GetRequiredService<IRevisionService>();
+
+    public IFlujoService Flujo => _scope.ServiceProvider.GetRequiredService<IFlujoService>();
+
+    public string RutaArchivos { get; }
+
+    /// <summary>PDF mínimo pero con la firma correcta. Cada llamada puede variar el contenido con <paramref name="marca"/>.</summary>
+    public static byte[] PdfDePrueba(string marca = "base") =>
+        System.Text.Encoding.ASCII.GetBytes($"%PDF-1.4\n% prueba {marca}\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
+
+    public async Task<Guid> IdDeAsync(Actor actor)
+    {
+        await using var db = Db();
+        return (await db.Usuarios.SingleAsync(u => u.Identificador == actor.Identificador)).Id;
+    }
+
+    public Task<Actor> NuevoRevisorAsync() => NuevoActorAsync([RolSistema.Revisor]);
+
+    public Task<Actor> NuevoAprobadorAsync() => NuevoActorAsync([RolSistema.Aprobador]);
+
+    public async Task SubirPdfAsync(Actor actor, int revisionId, string marca = "base", string nombre = "documento.pdf")
+    {
+        using var s = new MemoryStream(PdfDePrueba(marca));
+        await Revisiones.SubirArchivoAsync(actor, revisionId, TipoArchivo.Pdf, nombre, s);
+    }
+
+    /// <summary>
+    /// Todo listo para probar el flujo: área con tipo, plantilla Revisión → Aprobación, autor con su
+    /// documento (Rev.00 en borrador) y PDF subido, más un revisor y un aprobador.
+    /// </summary>
+    public async Task<EscenarioFlujo> PrepararFlujoAsync(bool conPdf = true, bool conPlantilla = true)
+    {
+        var admin = await NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, _) = await NuevaAreaConTipoAsync(admin);
+        if (conPlantilla)
+        {
+            await Flujo.GuardarPlantillaAsync(admin, tipoId,
+            [
+                new PasoPlantillaDto(1, TipoPaso.Revision, "Revisión técnica"),
+                new PasoPlantillaDto(2, TipoPaso.Aprobacion, "Aprobación"),
+            ]);
+        }
+
+        var autor = await NuevoAutorAsync(codigoArea);
+        var revisor = await NuevoRevisorAsync();
+        var aprobador = await NuevoAprobadorAsync();
+        var doc = await Documentos.CrearAsync(autor, new NuevoDocumento("Procedimiento de prueba", areaId, null, tipoId));
+        var revisionId = doc.Revisiones.Single().Id;
+        if (conPdf)
+        {
+            await SubirPdfAsync(autor, revisionId);
+        }
+
+        return new EscenarioFlujo(admin, autor, revisor, aprobador, areaId, codigoArea, tipoId, doc, revisionId,
+            await IdDeAsync(revisor), await IdDeAsync(aprobador));
+    }
+
+    /// <summary>Envía la revisión con el revisor y el aprobador del escenario.</summary>
+    public Task IniciarAsync(EscenarioFlujo f) =>
+        Flujo.IniciarAsync(f.Autor, f.RevisionId, [new AsignacionPaso(1, f.RevisorId), new AsignacionPaso(2, f.AprobadorId)]);
+
+    public async Task<InstanciaFlujoDto> UltimoFlujoAsync(EscenarioFlujo f) =>
+        (await Flujo.HistorialAsync(f.Autor, f.RevisionId)).First();
+
+    public async Task<EstadoRevision> EstadoRevisionAsync(int revisionId)
+    {
+        await using var db = Db();
+        return (await db.Revisiones.AsNoTracking().SingleAsync(r => r.Id == revisionId)).Estado;
+    }
 
     public static string CodigoUnico(string prefijo = "") => (prefijo + Guid.NewGuid().ToString("N")).ToUpperInvariant()[..8];
 
@@ -86,5 +164,30 @@ public sealed class Escenario : IDisposable
     {
         _scope.Dispose();
         _sp.Dispose();
+        try
+        {
+            if (Directory.Exists(RutaArchivos))
+            {
+                Directory.Delete(RutaArchivos, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+            // Limpieza de mejor esfuerzo: no debe tumbar la prueba.
+        }
     }
 }
+
+/// <summary>Los actores y datos de un documento listo para recorrer el flujo.</summary>
+public sealed record EscenarioFlujo(
+    Actor Admin,
+    Actor Autor,
+    Actor Revisor,
+    Actor Aprobador,
+    int AreaId,
+    string CodigoArea,
+    int TipoId,
+    DocumentoDetalleDto Documento,
+    int RevisionId,
+    Guid RevisorId,
+    Guid AprobadorId);

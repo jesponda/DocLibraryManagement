@@ -1,3 +1,4 @@
+using DocLibraryManagement.Application.Archivos;
 using DocLibraryManagement.Components;
 using DocLibraryManagement.Infrastructure;
 using DocLibraryManagement.Infrastructure.Persistencia;
@@ -13,6 +14,15 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddSeguridadDocumental(builder.Configuration, builder.Environment);
 builder.Services.AddHealthChecks();
+
+// Si no se configura una carpeta, los archivos van a App_Data/archivos junto a la aplicación (fuera de wwwroot).
+builder.Services.PostConfigure<ArchivosOptions>(o =>
+{
+    if (string.IsNullOrWhiteSpace(o.RutaBase))
+    {
+        o.RutaBase = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "archivos");
+    }
+});
 
 var app = builder.Build();
 
@@ -43,6 +53,8 @@ if (ConfiguracionSeguridad.ObtenerModo(app.Configuration) == ConfiguracionSeguri
 {
     app.MapEndpointsDesarrollo();
 }
+
+app.MapEndpointsArchivos();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
