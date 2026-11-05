@@ -1,0 +1,56 @@
+@page "/documentos"
+@attribute [Authorize(Roles = "Autor,Administrador,Auditor")]
+@rendermode InteractiveServer
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Documentos
+@using DocLibraryManagement.Domain
+@inject IDocumentoService Servicio
+
+<PageTitle>Documentos</PageTitle>
+
+<h1>Documentos</h1>
+
+<Mensajes Error="@Error" />
+
+<AuthorizeView Policy="@Politicas.PuedeEditarDocumentos">
+    <p><a class="btn btn-primary" href="documentos/nuevo">Nuevo documento</a></p>
+</AuthorizeView>
+
+@if (lista is null)
+{
+    <p>Cargando…</p>
+}
+else if (lista.Count == 0)
+{
+    <p class="text-muted">No hay documentos en las áreas que gestionas.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Código</th><th>Título</th><th>Área</th><th>Subárea</th><th>Tipo</th><th>Última revisión</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var d in lista)
+        {
+            <tr>
+                <td><code>@d.Codigo</code></td>
+                <td>@d.Titulo</td>
+                <td>@d.Area</td>
+                <td>@(d.SubArea ?? "—")</td>
+                <td>@d.Tipo</td>
+                <td>@d.UltimaRevision <span class="badge text-bg-secondary">@Presentacion.NombreEstado(d.EstadoUltimaRevision)</span></td>
+                <td><a href="documentos/@d.Id">Abrir</a></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<DocumentoResumenDto>? lista;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await EjecutarAsync(async a => lista = await Servicio.ListarGestionablesAsync(a));
+        lista ??= [];
+    }
+}

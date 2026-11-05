@@ -346,6 +346,11 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.Property<bool>("Activo")
                         .HasColumnType("bit");
 
+                    b.Property<string>("AreasUltimoAcceso")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("Correo")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -359,6 +364,11 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                         .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("NombreVisible")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RolesUltimoAcceso")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");

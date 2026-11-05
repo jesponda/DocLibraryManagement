@@ -46,7 +46,7 @@ internal sealed class TransformacionClaimsDocumental(
 
             try
             {
-                await sincronizador.SincronizarAsync(nombre, nombre, correo: null);
+                await sincronizador.SincronizarAsync(nombre, nombre, correo: null, acceso.Roles.ToList(), acceso.Areas.ToList());
                 cache.Set(clave, acceso, TimeSpan.FromMinutes(Math.Max(1, opciones.Value.MinutosCache)));
             }
             catch (Exception ex)

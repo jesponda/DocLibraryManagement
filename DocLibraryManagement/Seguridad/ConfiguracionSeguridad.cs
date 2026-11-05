@@ -23,6 +23,8 @@ public static class ConfiguracionSeguridad
         services.Configure<AutorizacionOptions>(configuracion.GetSection(AutorizacionOptions.Seccion));
         services.Configure<DesarrolloOptions>(configuracion.GetSection(DesarrolloOptions.Seccion));
         services.AddMemoryCache();
+        services.AddHttpContextAccessor();
+        services.AddScoped<ProveedorActor>();
 
         var modo = ObtenerModo(configuracion);
         switch (modo)

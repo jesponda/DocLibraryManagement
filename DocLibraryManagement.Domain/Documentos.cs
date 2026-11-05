@@ -82,5 +82,8 @@ public class RevisionDocumento
 
     public Usuario? Autor { get; set; }
 
-    public string Etiqueta => Menor == 0 ? $"Rev.{Mayor:00}" : $"Rev.{Mayor:00}.{Menor}";
+    public string Etiqueta => FormatearEtiqueta(Mayor, Menor);
+
+    public static string FormatearEtiqueta(int mayor, int menor) =>
+        menor == 0 ? $"Rev.{mayor:00}" : $"Rev.{mayor:00}.{menor}";
 }

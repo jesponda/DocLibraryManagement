@@ -111,6 +111,45 @@ public class AuditoriaYUsuariosTests(BaseDatosFixture bd) : IClassFixture<BaseDa
     }
 
     [Fact]
+    public async Task El_acceso_guarda_una_copia_informativa_de_roles_y_areas()
+    {
+        var id = $"TEST\\{Guid.NewGuid():N}";
+        var sincronizador = CrearSincronizador(out var sp, new FakeTimeProvider(DateTimeOffset.UtcNow));
+        using var _ = sp;
+
+        await sincronizador.SincronizarAsync(id, "Autor", null,
+            [RolSistema.Lector, RolSistema.Autor], ["MAN", "CAL"]);
+
+        await using var db = bd.Crear();
+        var guardado = await db.Usuarios.SingleAsync(u => u.Identificador == id);
+        Assert.Equal("Lector,Autor", guardado.RolesUltimoAcceso);
+        Assert.Equal("CAL,MAN", guardado.AreasUltimoAcceso);
+        Assert.True(guardado.TuvoRolEnUltimoAcceso(RolSistema.Autor));
+        Assert.False(guardado.TuvoRolEnUltimoAcceso(RolSistema.Aprobador));
+    }
+
+    [Fact]
+    public async Task Un_acceso_posterior_actualiza_la_copia_y_uno_sin_roles_no_la_borra()
+    {
+        var id = $"TEST\\{Guid.NewGuid():N}";
+        var sincronizador = CrearSincronizador(out var sp, new FakeTimeProvider(DateTimeOffset.UtcNow));
+        using var _ = sp;
+
+        await sincronizador.SincronizarAsync(id, "U", null, [RolSistema.Lector, RolSistema.Autor], ["CAL"]);
+        await sincronizador.SincronizarAsync(id, "U", null, [RolSistema.Lector], []);
+        await using (var db = bd.Crear())
+        {
+            var tras = await db.Usuarios.SingleAsync(u => u.Identificador == id);
+            Assert.Equal("Lector", tras.RolesUltimoAcceso); // perdió el rol: la copia lo refleja
+            Assert.Equal("", tras.AreasUltimoAcceso);
+        }
+
+        await sincronizador.SincronizarAsync(id, "U", null); // sin datos de roles: no toca la copia
+        await using var db2 = bd.Crear();
+        Assert.Equal("Lector", (await db2.Usuarios.SingleAsync(u => u.Identificador == id)).RolesUltimoAcceso);
+    }
+
+    [Fact]
     public async Task Accesos_simultaneos_del_mismo_usuario_nuevo_no_duplican_ni_fallan()
     {
         var id = $"TEST\\{Guid.NewGuid():N}";

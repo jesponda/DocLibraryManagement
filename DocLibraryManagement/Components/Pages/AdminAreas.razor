@@ -1,0 +1,294 @@
+@page "/administracion/areas"
+@attribute [Authorize(Policy = Politicas.PuedeAdministrar)]
+@rendermode InteractiveServer
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Catalogo
+@inject ICatalogoService Catalogo
+
+<PageTitle>Áreas y subáreas</PageTitle>
+
+<h1>Áreas y subáreas</h1>
+<p><a href="administracion">← Administración</a></p>
+
+<Mensajes Error="@Error" Exito="@Exito" />
+
+<div class="card mb-4" style="max-width: 36rem">
+    <div class="card-body">
+        <h2 class="h5">Nueva área</h2>
+        <div class="row g-2">
+            <div class="col-sm-4">
+                <label class="form-label" for="nuevoCodigo">Abreviatura</label>
+                <input id="nuevoCodigo" class="form-control" maxlength="10" @bind="nuevoCodigo" />
+            </div>
+            <div class="col-sm-8">
+                <label class="form-label" for="nuevoNombre">Nombre</label>
+                <input id="nuevoNombre" class="form-control" maxlength="200" @bind="nuevoNombre" />
+            </div>
+        </div>
+        <button class="btn btn-primary mt-3" @onclick="CrearAreaAsync">Crear área</button>
+        <p class="text-muted small mt-2 mb-0">La abreviatura (por ejemplo CAL) forma parte del código de los documentos y no se puede cambiar después.</p>
+    </div>
+</div>
+
+@if (areas is null)
+{
+    <p>Cargando…</p>
+}
+else if (areas.Count == 0)
+{
+    <p class="text-muted">Todavía no hay áreas. Crea la primera arriba.</p>
+}
+else
+{
+    <table class="table table-sm align-middle" style="max-width: 50rem">
+        <thead><tr><th>Abreviatura</th><th>Nombre</th><th>Subáreas</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var a in areas)
+        {
+            <tr class="@(a.Id == seleccionada?.Id ? "table-active" : a.Activa ? "" : "text-muted")">
+                <td><code>@a.Codigo</code></td>
+                <td>@a.Nombre</td>
+                <td>@a.SubAreas.Count</td>
+                <td>@(a.Activa ? "Activa" : "Desactivada")</td>
+                <td><button class="btn btn-sm btn-outline-primary" @onclick="() => Seleccionar(a)">Gestionar</button></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@if (seleccionada is not null)
+{
+    <div class="card mb-4" style="max-width: 50rem">
+        <div class="card-header"><strong>@seleccionada.Codigo</strong> – @seleccionada.Nombre</div>
+        <div class="card-body">
+
+            <h2 class="h6">Datos del área</h2>
+            <div class="row g-2 align-items-end">
+                <div class="col-sm-7">
+                    <label class="form-label" for="areaNombre">Nombre</label>
+                    <input id="areaNombre" class="form-control" maxlength="200" @bind="areaNombre" />
+                </div>
+                <div class="col-sm-3">
+                    <div class="form-check">
+                        <input id="areaActiva" type="checkbox" class="form-check-input" @bind="areaActiva" />
+                        <label class="form-check-label" for="areaActiva">Activa</label>
+                    </div>
+                </div>
+                <div class="col-sm-2"><button class="btn btn-outline-primary" @onclick="GuardarAreaAsync">Guardar</button></div>
+            </div>
+
+            <hr />
+            <h2 class="h6">Tipos de documento que se pueden crear en esta área</h2>
+            @if (tipos.Count == 0)
+            {
+                <p class="text-muted">No hay tipos de documento. Créalos primero en <a href="administracion/tipos">Tipos de documento</a>.</p>
+            }
+            else
+            {
+                @foreach (var t in tipos)
+                {
+                    <div class="form-check">
+                        <input id="ta-@t.Id" type="checkbox" class="form-check-input"
+                               checked="@tiposArea.Contains(t.Id)"
+                               @onchange="e => Alternar(tiposArea, t.Id, (bool)e.Value!)" />
+                        <label class="form-check-label @(t.Activo ? "" : "text-muted")" for="ta-@t.Id">
+                            <code>@t.Codigo</code> @t.Nombre @(t.Activo ? "" : "(desactivado)")
+                        </label>
+                    </div>
+                }
+                <button class="btn btn-outline-primary btn-sm mt-2" @onclick="GuardarTiposAreaAsync">Guardar tipos del área</button>
+            }
+
+            <hr />
+            <h2 class="h6">Subáreas</h2>
+            @if (seleccionada.SubAreas.Count == 0)
+            {
+                <p class="text-muted">Esta área no tiene subáreas.</p>
+            }
+            else
+            {
+                <table class="table table-sm align-middle">
+                    <thead><tr><th>Nombre</th><th>Tipos</th><th>Estado</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach (var s in seleccionada.SubAreas)
+                    {
+                        <tr class="@(s.Id == subSeleccionada?.Id ? "table-active" : s.Activa ? "" : "text-muted")">
+                            <td>@s.Nombre</td>
+                            <td>@(s.TipoIds.Count == 0 ? "Hereda los del área" : $"{s.TipoIds.Count} propios")</td>
+                            <td>@(s.Activa ? "Activa" : "Desactivada")</td>
+                            <td><button class="btn btn-sm btn-outline-secondary" @onclick="() => SeleccionarSub(s)">Editar</button></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+
+            @if (subSeleccionada is not null)
+            {
+                <div class="border rounded p-3 mb-3">
+                    <h3 class="h6">Editando «@subSeleccionada.Nombre»</h3>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-sm-7">
+                            <label class="form-label" for="subNombre">Nombre</label>
+                            <input id="subNombre" class="form-control" maxlength="200" @bind="subNombre" />
+                        </div>
+                        <div class="col-sm-5">
+                            <div class="form-check">
+                                <input id="subActiva" type="checkbox" class="form-check-input" @bind="subActiva" />
+                                <label class="form-check-label" for="subActiva">Activa</label>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="mt-3 mb-1"><strong>Tipos propios</strong> <span class="text-muted small">(sin marcar ninguno, hereda los del área)</span></p>
+                    @foreach (var t in tipos)
+                    {
+                        <div class="form-check">
+                            <input id="ts-@t.Id" type="checkbox" class="form-check-input"
+                                   checked="@tiposSub.Contains(t.Id)"
+                                   @onchange="e => Alternar(tiposSub, t.Id, (bool)e.Value!)" />
+                            <label class="form-check-label @(t.Activo ? "" : "text-muted")" for="ts-@t.Id">
+                                <code>@t.Codigo</code> @t.Nombre @(t.Activo ? "" : "(desactivado)")
+                            </label>
+                        </div>
+                    }
+                    <div class="mt-2">
+                        <button class="btn btn-primary btn-sm" @onclick="GuardarSubAsync">Guardar subárea</button>
+                        <button class="btn btn-link btn-sm" @onclick="() => subSeleccionada = null">Cerrar</button>
+                    </div>
+                </div>
+            }
+
+            <div class="row g-2">
+                <div class="col-sm-8">
+                    <label class="form-label" for="nuevaSub">Nueva subárea</label>
+                    <input id="nuevaSub" class="form-control" maxlength="200" @bind="nuevaSub" />
+                </div>
+                <div class="col-sm-4 d-flex align-items-end">
+                    <button class="btn btn-outline-primary" @onclick="CrearSubAsync">Agregar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<AreaDto>? areas;
+    private List<TipoDocumentoDto> tipos = [];
+
+    private string nuevoCodigo = "";
+    private string nuevoNombre = "";
+
+    private AreaDto? seleccionada;
+    private string areaNombre = "";
+    private bool areaActiva = true;
+    private HashSet<int> tiposArea = [];
+
+    private SubAreaDto? subSeleccionada;
+    private string subNombre = "";
+    private bool subActiva = true;
+    private HashSet<int> tiposSub = [];
+    private string nuevaSub = "";
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    /// <summary>Recarga y conserva la selección (por id) para que el panel no se cierre tras guardar.</summary>
+    private async Task CargarAsync()
+    {
+        var areaId = seleccionada?.Id;
+        var subId = subSeleccionada?.Id;
+
+        areas = [.. await Catalogo.ListarAreasAsync(incluirInactivas: true)];
+        tipos = [.. await Catalogo.ListarTiposAsync(incluirInactivos: true)];
+
+        seleccionada = areas.FirstOrDefault(a => a.Id == areaId);
+        subSeleccionada = seleccionada?.SubAreas.FirstOrDefault(s => s.Id == subId);
+        if (seleccionada is not null)
+        {
+            CargarEdicionArea(seleccionada);
+        }
+
+        if (subSeleccionada is not null)
+        {
+            CargarEdicionSub(subSeleccionada);
+        }
+    }
+
+    private void CargarEdicionArea(AreaDto a)
+    {
+        areaNombre = a.Nombre;
+        areaActiva = a.Activa;
+        tiposArea = [.. a.TipoIds];
+    }
+
+    private void CargarEdicionSub(SubAreaDto s)
+    {
+        subNombre = s.Nombre;
+        subActiva = s.Activa;
+        tiposSub = [.. s.TipoIds];
+    }
+
+    private void Seleccionar(AreaDto a)
+    {
+        seleccionada = a;
+        subSeleccionada = null;
+        Error = Exito = null;
+        CargarEdicionArea(a);
+    }
+
+    private void SeleccionarSub(SubAreaDto s)
+    {
+        subSeleccionada = s;
+        Error = Exito = null;
+        CargarEdicionSub(s);
+    }
+
+    private async Task CrearAreaAsync()
+    {
+        if (await EjecutarAsync(a => Catalogo.CrearAreaAsync(a, nuevoCodigo, nuevoNombre), "Área creada."))
+        {
+            nuevoCodigo = nuevoNombre = "";
+            await CargarAsync();
+        }
+    }
+
+    private async Task GuardarAreaAsync()
+    {
+        if (await EjecutarAsync(a => Catalogo.ActualizarAreaAsync(a, seleccionada!.Id, areaNombre, areaActiva), "Área actualizada."))
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task GuardarTiposAreaAsync()
+    {
+        if (await EjecutarAsync(a => Catalogo.EstablecerTiposDeAreaAsync(a, seleccionada!.Id, tiposArea.ToList()), "Tipos del área guardados."))
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CrearSubAsync()
+    {
+        if (await EjecutarAsync(a => Catalogo.CrearSubAreaAsync(a, seleccionada!.Id, nuevaSub), "Subárea creada."))
+        {
+            nuevaSub = "";
+            await CargarAsync();
+        }
+    }
+
+    private async Task GuardarSubAsync()
+    {
+        var id = subSeleccionada!.Id;
+        var ok = await EjecutarAsync(async a =>
+        {
+            await Catalogo.ActualizarSubAreaAsync(a, id, subNombre, subActiva);
+            await Catalogo.EstablecerTiposDeSubAreaAsync(a, id, tiposSub.ToList());
+        }, "Subárea guardada.");
+
+        if (ok)
+        {
+            await CargarAsync();
+        }
+    }
+}

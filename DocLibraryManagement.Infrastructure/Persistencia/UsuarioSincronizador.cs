@@ -4,17 +4,23 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DocLibraryManagement.Infrastructure.Persistencia;
 
-internal sealed class UsuarioSincronizador(AppDbContext db, TimeProvider reloj) : IUsuarioSincronizador
+internal sealed class UsuarioSincronizador(IDbContextFactory<AppDbContext> fabrica, TimeProvider reloj)
+    : IUsuarioSincronizador
 {
     public async Task<Usuario> SincronizarAsync(
         string identificador,
         string nombreVisible,
         string? correo,
+        IReadOnlyCollection<RolSistema>? roles = null,
+        IReadOnlyCollection<string>? areas = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(identificador);
         var ahora = reloj.GetUtcNow().UtcDateTime;
+        var rolesTexto = roles is null ? null : string.Join(',', roles.OrderBy(r => r));
+        var areasTexto = areas is null ? null : string.Join(',', areas.OrderBy(a => a, StringComparer.OrdinalIgnoreCase));
 
+        await using var db = await fabrica.CreateDbContextAsync(cancellationToken);
         var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Identificador == identificador, cancellationToken);
 
         if (usuario is null)
@@ -27,6 +33,8 @@ internal sealed class UsuarioSincronizador(AppDbContext db, TimeProvider reloj) 
                 Correo = correo,
                 FechaCreacionUtc = ahora,
                 UltimoAccesoUtc = ahora,
+                RolesUltimoAcceso = rolesTexto ?? "",
+                AreasUltimoAcceso = areasTexto ?? "",
             };
             db.Usuarios.Add(usuario);
 
@@ -46,6 +54,8 @@ internal sealed class UsuarioSincronizador(AppDbContext db, TimeProvider reloj) 
         usuario.NombreVisible = nombreVisible;
         usuario.Correo = correo ?? usuario.Correo;
         usuario.UltimoAccesoUtc = ahora;
+        usuario.RolesUltimoAcceso = rolesTexto ?? usuario.RolesUltimoAcceso;
+        usuario.AreasUltimoAcceso = areasTexto ?? usuario.AreasUltimoAcceso;
         await db.SaveChangesAsync(cancellationToken);
         return usuario;
     }

@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Versión del documento | 1.2 |
+| Versión del documento | 1.3 |
 | Fecha | 2026-11-05 |
 | Estado | Aprobado para iniciar Fase 1 |
 | Norma base | ISO 9001:2015 cláusula 7.5 (Información documentada), estructura Annex SL |
@@ -221,6 +221,18 @@ Cada fase debe terminar con: código compilando, pruebas pasando, resumen de lo 
 - Bitácora (7.6).
 - **Aceptación:** crear → revisar → aprobar → publicar → crear nueva revisión → publicar → la anterior queda Obsoleta; separación de funciones y unicidad de vigente probadas, incluida una prueba de concurrencia.
 
+**Entrega en tres tramos**, con pausa de revisión al final de cada uno:
+- **2A – Catálogos y creación de documentos** *(entregado)*: catálogos configurables, creación con código automático (primera revisión Rev.00 en Borrador), listado y detalle básicos, copia de roles del usuario.
+- **2B – Borradores, archivos y flujo**: carga de archivos (7.5), plantillas de flujo por tipo (7.2), asignación de personas, decisiones y rechazos.
+- **2C – Publicación y ciclo de vida**: publicación, revisión mayor y menor, vigencia diferida, obsolescencia automática y retiro (7.1, 7.3). La transición diferida necesita un job; su lógica se construye aquí y el job que la dispara en la Fase 4.
+
+**Decisiones de diseño de la Fase 2:**
+- **Asignación de pasos a personas concretas:** al iniciar sesión se guarda en `Usuario` una **copia informativa** de sus roles y áreas (`RolesUltimoAcceso`, `AreasUltimoAcceso`). Con ella el autor elige candidatos al armar el flujo. Limitaciones: solo aparecen quienes ya entraron al menos una vez, y la copia puede estar desactualizada hasta 10 minutos. **Nunca se usa para autorizar:** la autorización siempre sale de los grupos de AD vigentes, y el servicio debe volver a validar que la persona asignada tenga el rol al decidir.
+- **Servicios reciben un `Actor`** (identificador, roles, áreas, IP) y validan permisos por sí mismos; no dependen del `HttpContext`.
+- **`IDbContextFactory`** en lugar de un `DbContext` por circuito (Blazor Server). Cada operación crea y libera el suyo.
+- **Consecutivo de documento:** se calcula como máximo + 1 y se confía en el índice único; ante colisión, reintenta (hasta 15 veces con espera aleatoria). Los documentos nunca se borran, por lo que un número no se reutiliza.
+- **La IP en la bitácora es de mejor esfuerzo:** en Blazor Server el `HttpContext` solo existe en la solicitud inicial del circuito.
+
 ### Fase 3 – Consulta
 - Lista maestra (filtros, exportación a Excel/CSV).
 - Visor del PDF vigente, enlace estable `/doc/{codigo}`, vista de obsoletos con banner.
@@ -285,6 +297,7 @@ Pendientes de datos reales (no bloquean la Fase 1, bloquean la puesta en producc
 | 1.0 | 2026-11-05 | Versión inicial: requerimientos levantados con el usuario (norma base, alcance, flujo, identidad, versiones y obsoletos). |
 | 1.1 | 2026-11-05 | Catálogo configurable Área → Subárea con tipos de documento asociados (6.1.1); el resto de atributos se define sobre la marcha. |
 | 1.2 | 2026-11-05 | Fase 1 construida. Nombres de proyectos alineados con el código (sección 4). Se documenta el modo de autenticación de desarrollo y la verificación pendiente de Windows Auth (sección 10). |
+| 1.3 | 2026-11-05 | Tramo 2A construido (catálogos y creación de documentos). Se documentan los tramos de la Fase 2 y sus decisiones de diseño. |
 
 ## 14. Referencias
 

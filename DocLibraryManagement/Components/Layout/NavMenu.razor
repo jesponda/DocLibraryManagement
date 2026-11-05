@@ -24,6 +24,14 @@
             </Authorized>
         </AuthorizeView>
 
+        <AuthorizeView Roles="Autor,Administrador,Auditor">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="documentos" Match="NavLinkMatch.Prefix">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Documentos
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
         <AuthorizeView Policy="@Politicas.PuedeAdministrar">
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="administracion">

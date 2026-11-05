@@ -1,0 +1,151 @@
+﻿@page "/documentos/nuevo"
+@attribute [Authorize(Policy = Politicas.PuedeEditarDocumentos)]
+@rendermode InteractiveServer
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Catalogo
+@using DocLibraryManagement.Application.Documentos
+@inject ICatalogoService Catalogo
+@inject IDocumentoService Servicio
+@inject NavigationManager Navegacion
+
+<PageTitle>Nuevo documento</PageTitle>
+
+<h1>Nuevo documento</h1>
+<p><a href="documentos">← Documentos</a></p>
+
+<Mensajes Error="@Error" />
+
+@if (areas is null)
+{
+    <p>Cargando…</p>
+}
+else if (areas.Count == 0)
+{
+    <div class="alert alert-info">
+        No hay áreas donde puedas crear documentos. Solicita a IT que te agregue al grupo de autores de tu área.
+    </div>
+}
+else
+{
+    <div class="card" style="max-width: 40rem">
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label" for="area">Área</label>
+                <select id="area" class="form-select" value="@areaId" @onchange="AreaCambiadaAsync">
+                    <option value="0">Selecciona…</option>
+                    @foreach (var a in areas)
+                    {
+                        <option value="@a.Id">@a.Codigo – @a.Nombre</option>
+                    }
+                </select>
+            </div>
+
+            @if (areaActual is not null)
+            {
+                @if (areaActual.SubAreas.Any(s => s.Activa))
+                {
+                    <div class="mb-3">
+                        <label class="form-label" for="sub">Subárea <span class="text-muted">(opcional)</span></label>
+                        <select id="sub" class="form-select" value="@subAreaId" @onchange="SubAreaCambiadaAsync">
+                            <option value="0">Sin subárea</option>
+                            @foreach (var s in areaActual.SubAreas.Where(s => s.Activa))
+                            {
+                                <option value="@s.Id">@s.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <div class="mb-3">
+                    <label class="form-label" for="tipo">Tipo de documento</label>
+                    @if (tipos.Count == 0)
+                    {
+                        <div class="text-muted">Esta área no tiene tipos de documento habilitados. Pide a un Administrador que los configure.</div>
+                    }
+                    else
+                    {
+                        <select id="tipo" class="form-select" @bind="tipoId">
+                            <option value="0">Selecciona…</option>
+                            @foreach (var t in tipos)
+                            {
+                                <option value="@t.Id">@t.Codigo – @t.Nombre</option>
+                            }
+                        </select>
+                    }
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="titulo">Título</label>
+                    <input id="titulo" class="form-control" maxlength="300" @bind="titulo" />
+                    <div class="form-text">El código (por ejemplo PRO-CAL-012) se asigna automáticamente.</div>
+                </div>
+
+                <button class="btn btn-primary" @onclick="CrearAsync" disabled="@(guardando || tipos.Count == 0)">Crear documento</button>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private List<AreaDto>? areas;
+    private AreaDto? areaActual;
+    private IReadOnlyList<TipoDocumentoDto> tipos = [];
+    private int areaId;
+    private int subAreaId;
+    private int tipoId;
+    private string titulo = "";
+    private bool guardando;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var todas = await Catalogo.ListarAreasAsync();
+        await EjecutarAsync(a =>
+        {
+            // Solo se ofrecen las áreas donde el usuario puede editar (el Administrador, todas).
+            areas = [.. todas.Where(x => a.PuedeEditarEnArea(x.Codigo))];
+            return Task.CompletedTask;
+        });
+        areas ??= [];
+    }
+
+    private async Task AreaCambiadaAsync(ChangeEventArgs e)
+    {
+        areaId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        areaActual = areas!.FirstOrDefault(a => a.Id == areaId);
+        subAreaId = 0;
+        tipoId = 0;
+        await CargarTiposAsync();
+    }
+
+    private async Task SubAreaCambiadaAsync(ChangeEventArgs e)
+    {
+        subAreaId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        tipoId = 0;
+        await CargarTiposAsync();
+    }
+
+    private async Task CargarTiposAsync() =>
+        tipos = areaActual is null
+            ? []
+            : await Catalogo.TiposDisponiblesAsync(areaActual.Id, subAreaId == 0 ? null : subAreaId);
+
+    private async Task CrearAsync()
+    {
+        if (areaId == 0 || tipoId == 0)
+        {
+            Error = "Elige el área y el tipo de documento.";
+            return;
+        }
+
+        guardando = true;
+        DocumentoDetalleDto? creado = null;
+        var ok = await EjecutarAsync(async a =>
+            creado = await Servicio.CrearAsync(a, new NuevoDocumento(titulo, areaId, subAreaId == 0 ? null : subAreaId, tipoId)));
+        guardando = false;
+
+        if (ok && creado is not null)
+        {
+            Navegacion.NavigateTo($"documentos/{creado.Id}");
+        }
+    }
+}

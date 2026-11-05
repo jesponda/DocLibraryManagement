@@ -66,6 +66,8 @@ internal sealed class UsuarioConfig : IEntityTypeConfiguration<Usuario>
         b.Property(x => x.Identificador).HasMaxLength(256).IsRequired();
         b.Property(x => x.NombreVisible).HasMaxLength(200).IsRequired();
         b.Property(x => x.Correo).HasMaxLength(256);
+        b.Property(x => x.RolesUltimoAcceso).HasMaxLength(200).IsRequired();
+        b.Property(x => x.AreasUltimoAcceso).HasMaxLength(1000).IsRequired();
         b.HasIndex(x => x.Identificador).IsUnique();
     }
 }

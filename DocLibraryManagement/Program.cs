@@ -19,8 +19,8 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     // Solo en desarrollo: en producción las migraciones se aplican con el script de despliegue.
-    using var scope = app.Services.CreateScope();
-    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+    using var db = app.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext();
+    db.Database.Migrate();
 }
 else
 {

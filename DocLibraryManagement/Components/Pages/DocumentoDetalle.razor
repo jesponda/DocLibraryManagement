@@ -1,0 +1,114 @@
+﻿@page "/documentos/{Id:int}"
+@attribute [Authorize(Roles = "Autor,Administrador,Auditor")]
+@rendermode InteractiveServer
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Catalogo
+@using DocLibraryManagement.Application.Documentos
+@inject ICatalogoService Catalogo
+@inject IDocumentoService Servicio
+
+<PageTitle>@(doc?.Codigo ?? "Documento")</PageTitle>
+
+<p><a href="documentos">← Documentos</a></p>
+
+<Mensajes Error="@Error" Exito="@Exito" />
+
+@if (cargando)
+{
+    <p>Cargando…</p>
+}
+else if (doc is null)
+{
+    @if (Error is null)
+    {
+        <h1>Documento no encontrado</h1>
+    }
+}
+else
+{
+    <h1><code>@doc.Codigo</code></h1>
+    <h2 class="h4">@doc.Titulo</h2>
+
+    <dl class="row" style="max-width: 50rem">
+        <dt class="col-sm-3">Área</dt><dd class="col-sm-9">@doc.Area</dd>
+        <dt class="col-sm-3">Subárea</dt>
+        <dd class="col-sm-9">
+            @if (puedeEditar && subAreas.Count > 0)
+            {
+                <select class="form-select form-select-sm d-inline-block w-auto" value="@subAreaElegida" @onchange="CambiarSubAreaAsync" aria-label="Subárea">
+                    <option value="0">Sin subárea</option>
+                    @foreach (var s in subAreas)
+                    {
+                        <option value="@s.Id">@s.Nombre</option>
+                    }
+                </select>
+            }
+            else
+            {
+                @(doc.SubArea ?? "—")
+            }
+        </dd>
+        <dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">@doc.Tipo</dd>
+        <dt class="col-sm-3">Responsable</dt><dd class="col-sm-9">@doc.Responsable</dd>
+        <dt class="col-sm-3">Creado</dt><dd class="col-sm-9">@doc.FechaCreacionUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+        <dt class="col-sm-3">Estado</dt><dd class="col-sm-9">@Presentacion.NombreEstado(doc.Estado)</dd>
+    </dl>
+
+    <h2 class="h5">Revisiones</h2>
+    <table class="table table-sm align-middle" style="max-width: 50rem">
+        <thead><tr><th>Revisión</th><th>Estado</th><th>Motivo</th><th>Autor</th><th>Fecha</th></tr></thead>
+        <tbody>
+        @foreach (var r in doc.Revisiones)
+        {
+            <tr>
+                <td>@r.Etiqueta</td>
+                <td><span class="badge text-bg-secondary">@Presentacion.NombreEstado(r.Estado)</span></td>
+                <td>@r.MotivoCambio</td>
+                <td>@r.Autor</td>
+                <td>@r.FechaCreacionUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+
+    <p class="text-muted">La carga de archivos y el flujo de revisión y aprobación llegan en el siguiente tramo.</p>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private DocumentoDetalleDto? doc;
+    private List<SubAreaDto> subAreas = [];
+    private int subAreaElegida;
+    private bool puedeEditar;
+    private bool cargando = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        cargando = true;
+        doc = null;
+        await EjecutarAsync(async a =>
+        {
+            doc = await Servicio.ObtenerAsync(a, Id);
+            if (doc is null)
+            {
+                return;
+            }
+
+            puedeEditar = a.PuedeEditarEnArea(doc.CodigoArea);
+            var area = (await Catalogo.ListarAreasAsync()).FirstOrDefault(x => x.Id == doc.AreaId);
+            subAreas = [.. area?.SubAreas.Where(s => s.Activa) ?? []];
+            subAreaElegida = doc.SubAreaId ?? 0;
+        });
+        cargando = false;
+    }
+
+    private async Task CambiarSubAreaAsync(ChangeEventArgs e)
+    {
+        var nueva = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        if (await EjecutarAsync(a => Servicio.CambiarSubAreaAsync(a, Id, nueva == 0 ? null : nueva), "Subárea actualizada."))
+        {
+            await OnParametersSetAsync();
+        }
+    }
+}
