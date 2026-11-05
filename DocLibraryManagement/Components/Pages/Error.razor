@@ -1,0 +1,27 @@
+﻿@page "/Error"
+@using System.Diagnostics
+@attribute [AllowAnonymous]
+
+<PageTitle>Error</PageTitle>
+
+<h1 class="text-danger">Ocurrió un error.</h1>
+<h2 class="text-danger">No pudimos procesar la solicitud.</h2>
+
+@if (ShowRequestId)
+{
+    <p>
+        Si el problema persiste, informa a IT con este identificador:
+        <code>@RequestId</code>
+    </p>
+}
+
+@code{
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

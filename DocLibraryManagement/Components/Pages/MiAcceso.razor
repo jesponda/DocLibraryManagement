@@ -1,0 +1,40 @@
+@page "/mi-acceso"
+
+<PageTitle>Mi acceso</PageTitle>
+
+<h1>Mi acceso</h1>
+
+<AuthorizeView>
+    <Authorized>
+        @{
+            var roles = context.User.ObtenerRoles().OrderBy(r => r).ToList();
+            var areas = context.User.ObtenerAreas().OrderBy(a => a).ToList();
+        }
+        <dl class="row">
+            <dt class="col-sm-3">Usuario</dt>
+            <dd class="col-sm-9">@context.User.Identity?.Name</dd>
+
+            <dt class="col-sm-3">Roles</dt>
+            <dd class="col-sm-9">@string.Join(", ", roles)</dd>
+
+            <dt class="col-sm-3">Áreas donde puede editar</dt>
+            <dd class="col-sm-9">
+                @if (roles.Contains(DocLibraryManagement.Domain.RolSistema.Administrador))
+                {
+                    <span>Todas (Administrador)</span>
+                }
+                else if (areas.Count == 0)
+                {
+                    <span>Ninguna</span>
+                }
+                else
+                {
+                    <span>@string.Join(", ", areas)</span>
+                }
+            </dd>
+        </dl>
+        <p class="text-muted">
+            Los roles se calculan a partir de tus grupos de Active Directory y pueden tardar unos minutos en actualizarse.
+        </p>
+    </Authorized>
+</AuthorizeView>

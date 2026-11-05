@@ -1,0 +1,40 @@
+@page "/dev/login"
+@using DocLibraryManagement.Seguridad
+@using Microsoft.Extensions.Options
+@attribute [AllowAnonymous]
+@layout MainLayout
+@inject IOptions<DesarrolloOptions> Opciones
+@inject IConfiguration Configuracion
+
+<PageTitle>Acceso de desarrollo</PageTitle>
+
+<h1>Acceso de desarrollo</h1>
+
+@if (ConfiguracionSeguridad.ObtenerModo(Configuracion) != ConfiguracionSeguridad.ModoDesarrollo)
+{
+    <p>Esta pantalla no está disponible.</p>
+}
+else
+{
+    <div class="alert alert-warning">
+        Modo de desarrollo: usuarios simulados, sin Active Directory. No existe en producción.
+    </div>
+
+    <div class="list-group" style="max-width: 32rem">
+        @foreach (var persona in Opciones.Value.Personas)
+        {
+            <form method="post" action="/dev/login/@persona.Id">
+                <button type="submit" class="list-group-item list-group-item-action">
+                    <strong>@persona.Nombre</strong><br />
+                    <small class="text-muted">
+                        @string.Join(", ", persona.Roles)
+                        @if (persona.Areas.Count > 0)
+                        {
+                            <text> — áreas: @string.Join(", ", persona.Areas)</text>
+                        }
+                    </small>
+                </button>
+            </form>
+        }
+    </div>
+}

@@ -1,0 +1,35 @@
+﻿<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Gestión documental</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Menú de navegación" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Inicio
+            </NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="mi-acceso">
+                        <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span> Mi acceso
+                    </NavLink>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Politicas.PuedeAdministrar">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="administracion">
+                    <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Administración
+                </NavLink>
+            </div>
+        </AuthorizeView>
+    </nav>
+</div>

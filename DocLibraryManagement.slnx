@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="DocLibraryManagement.Application/DocLibraryManagement.Application.csproj" />
+  <Project Path="DocLibraryManagement.Domain/DocLibraryManagement.Domain.csproj" />
+  <Project Path="DocLibraryManagement.Infrastructure/DocLibraryManagement.Infrastructure.csproj" />
+  <Project Path="DocLibraryManagement.Tests/DocLibraryManagement.Tests.csproj" />
+  <Project Path="DocLibraryManagement/DocLibraryManagement.csproj" />
+</Solution>

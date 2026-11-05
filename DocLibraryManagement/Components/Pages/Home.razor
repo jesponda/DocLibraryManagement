@@ -1,0 +1,16 @@
+﻿@page "/"
+
+<PageTitle>Inicio</PageTitle>
+
+<h1>Gestión documental</h1>
+
+<AuthorizeView>
+    <Authorized>
+        <p>Bienvenido, <strong>@context.User.Identity?.Name</strong>.</p>
+        <p>
+            Aquí podrás consultar la lista maestra y el PDF vigente de cada documento controlado.
+            Estas funciones llegarán en las siguientes fases.
+        </p>
+        <p><a href="/mi-acceso">Ver mi acceso</a></p>
+    </Authorized>
+</AuthorizeView>
