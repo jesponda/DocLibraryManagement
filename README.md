@@ -108,6 +108,20 @@ Al abrir la aplicación en **modo Desarrollo** aparece la pantalla *Acceso de de
 4. Como *Revisor* y *Aprobador*: **Mis tareas** → aprobar. Al aprobar la última etapa el documento queda **Vigente**.
 5. Como *Lector*: **Buscar** una palabra del PDF → abrir el resultado → ver el PDF en el visor.
 
+### Atajo para pruebas rápidas: `iniciar-local.bat`
+
+Para no recordar los comandos, en la raíz hay un script (doble clic o desde una consola):
+
+| Comando | Qué hace |
+|---|---|
+| `iniciar-local.bat` | Inicia la aplicación **solo en este equipo** (`http://localhost:5273`), en Development, y abre el navegador cuando responde |
+| `iniciar-local.bat red` | Igual, pero **acepta conexiones de otros equipos**. Pide confirmación (expone la aplicación sin contraseña), muestra las direcciones de este equipo y el comando de firewall limitado a una IP |
+| `iniciar-local.bat pruebas` | Ejecuta la suite completa en una carpeta de salida aparte (funciona aunque la aplicación esté corriendo) |
+| `iniciar-local.bat ayuda` | Muestra la ayuda |
+
+Variables opcionales: `PUERTO` (por defecto 5273), `SIN_NAVEGADOR` y `SIN_PAUSA`. Si el puerto ya está en uso avisa en lugar de fallar.
+El archivo es solo ASCII y se mantiene con saltos de línea de Windows (`.gitattributes`); con LF, `cmd` puede fallar al resolver etiquetas.
+
 ### Comandos habituales
 
 ```powershell
@@ -187,6 +201,8 @@ Navegador ──HTTP/SignalR──▶ Kestrel/IIS ──▶ Blazor Server (circu
 DocLibraryManagement/
 ├── DocLibraryManagement.slnx          Solución
 ├── dotnet-tools.json                  Fija dotnet-ef 10.0.14 (herramienta local)
+├── iniciar-local.bat                  Atajo para ejecutar/probar en local (ver §2)
+├── .gitattributes                     Mantiene CRLF en los .bat
 ├── README.md                          Este archivo
 ├── docs/
 │   └── PROMPT-DESARROLLO.md           Requerimiento + decisiones de diseño + historial de versiones

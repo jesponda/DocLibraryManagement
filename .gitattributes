@@ -1,0 +1,3 @@
+# Los .bat/.cmd necesitan saltos de linea de Windows (CRLF): con LF, cmd puede fallar al resolver etiquetas (goto/call).
+*.bat text eol=crlf
+*.cmd text eol=crlf
