@@ -4,8 +4,10 @@
 @inherits PaginaBase
 @using DocLibraryManagement.Application.Catalogo
 @using DocLibraryManagement.Application.Documentos
+@using DocLibraryManagement.Domain
 @inject ICatalogoService Catalogo
 @inject IDocumentoService Servicio
+@inject IRevisionService Revisiones
 
 <PageTitle>@(doc?.Codigo ?? "Documento")</PageTitle>
 
@@ -77,6 +79,87 @@ else
         </tbody>
     </table>
 
+    @if (puedeEditar && doc.Estado == EstadoDocumento.Activo && hayVigente && !hayAbierta)
+    {
+        <div class="mb-3" style="max-width: 50rem">
+            <button class="btn btn-outline-primary" @onclick="() => abriendoRevision = !abriendoRevision">Nueva revisión…</button>
+        </div>
+
+        @if (abriendoRevision)
+        {
+            <div class="card border-primary mb-3" style="max-width: 50rem">
+                <div class="card-header">Nueva revisión</div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <label class="form-label" for="tipoRev">Tipo de cambio</label>
+                        <select id="tipoRev" class="form-select" @bind="tipoNueva">
+                            <option value="@((int)TipoRevisionNueva.Mayor)">Mayor – cambia requisitos, pasos o responsabilidades (flujo completo)</option>
+                            <option value="@((int)TipoRevisionNueva.Menor)">Menor – corrección editorial (aprobación abreviada)</option>
+                        </select>
+                    </div>
+
+                    @if (tipoNueva == (int)TipoRevisionNueva.Menor)
+                    {
+                        <div class="alert alert-info">
+                            Una revisión menor se aprueba en una sola etapa por el
+                            @if (nombreDueno is null)
+                            {
+                                <strong>dueño del área, que todavía no está designado</strong><span>: pide a un Administrador que lo designe.</span>
+                            }
+                            else
+                            {
+                                <span>dueño del área: <strong>@nombreDueno</strong>.</span>
+                            }
+                        </div>
+                    }
+
+                    <div class="mb-2">
+                        <label class="form-label" for="motivoNueva">Motivo del cambio</label>
+                        <input id="motivoNueva" class="form-control" maxlength="1000" @bind="motivoNueva" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="descNueva">Descripción <span class="text-muted">(opcional)</span></label>
+                        <textarea id="descNueva" class="form-control" rows="2" maxlength="4000" @bind="descripcionNueva"></textarea>
+                    </div>
+
+                    @if (tipoNueva == (int)TipoRevisionNueva.Menor)
+                    {
+                        <div class="form-check mb-2">
+                            <input id="declara" type="checkbox" class="form-check-input" @bind="declaraEditorial" />
+                            <label class="form-check-label" for="declara">
+                                Declaro que este cambio <strong>no altera requisitos, pasos ni responsabilidades</strong>.
+                            </label>
+                        </div>
+                    }
+
+                    <button class="btn btn-primary" @onclick="CrearRevisionAsync">Crear borrador</button>
+                    <button class="btn btn-link" @onclick="() => abriendoRevision = false">Cancelar</button>
+                </div>
+            </div>
+        }
+    }
+
+    @if (esAdmin && doc.Estado == EstadoDocumento.Activo)
+    {
+        <div class="mb-3" style="max-width: 50rem">
+            <button class="btn btn-outline-danger btn-sm" @onclick="() => retirando = !retirando">Retirar documento…</button>
+            @if (retirando)
+            {
+                <div class="card border-danger mt-2">
+                    <div class="card-body">
+                        <p class="mb-2">
+                            Es una <strong>baja sin sucesor</strong>: la revisión vigente pasará a obsoleta y se cancelará cualquier
+                            borrador o flujo en curso. El código no se reutilizará. No se puede deshacer.
+                        </p>
+                        <label class="form-label" for="motivoRetiro">Motivo del retiro</label>
+                        <input id="motivoRetiro" class="form-control mb-2" maxlength="1000" @bind="motivoRetiro" />
+                        <button class="btn btn-danger" @onclick="RetirarAsync">Retirar documento</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
     @if (revisionId != 0)
     {
         <PanelRevision RevisionId="@revisionId" OnCambio="RecargarAsync" />
@@ -91,7 +174,20 @@ else
     private int subAreaElegida;
     private int revisionId;
     private bool puedeEditar;
+    private bool esAdmin;
+    private bool hayVigente;
+    private bool hayAbierta;
+    private string? nombreDueno;
     private bool cargando = true;
+
+    private bool abriendoRevision;
+    private int tipoNueva = (int)TipoRevisionNueva.Mayor;
+    private string motivoNueva = "";
+    private string descripcionNueva = "";
+    private bool declaraEditorial;
+
+    private bool retirando;
+    private string motivoRetiro = "";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -122,13 +218,45 @@ else
             }
 
             puedeEditar = a.PuedeEditarEnArea(doc.CodigoArea);
-            var area = (await Catalogo.ListarAreasAsync()).FirstOrDefault(x => x.Id == doc.AreaId);
+            esAdmin = a.EsAdministrador;
+            hayVigente = doc.Revisiones.Any(r => r.Estado == EstadoRevision.Vigente);
+            hayAbierta = doc.Revisiones.Any(r => r.Estado.EsAbierta());
+            var area = (await Catalogo.ListarAreasAsync(incluirInactivas: true)).FirstOrDefault(x => x.Id == doc.AreaId);
+            nombreDueno = area?.NombreDueno;
             subAreas = [.. area?.SubAreas.Where(s => s.Activa) ?? []];
             subAreaElegida = doc.SubAreaId ?? 0;
 
             // La revisión más reciente es la que importa por defecto.
             revisionId = doc.Revisiones.Any(r => r.Id == seleccionada) ? seleccionada : doc.Revisiones.FirstOrDefault()?.Id ?? 0;
         });
+    }
+
+    private async Task CrearRevisionAsync()
+    {
+        RevisionDetalleDto? creada = null;
+        var tipo = (TipoRevisionNueva)tipoNueva;
+
+        if (await EjecutarAsync(async a =>
+                creada = await Revisiones.CrearRevisionAsync(a, Id, tipo, motivoNueva, descripcionNueva, declaraEditorial)))
+        {
+            abriendoRevision = false;
+            motivoNueva = descripcionNueva = "";
+            declaraEditorial = false;
+            revisionId = creada!.Id; // se abre el panel de la revisión recién creada
+            await CargarAsync();
+            Exito = $"Se abrió la {creada.Etiqueta} en borrador. Sube el PDF y envíala a revisión.";
+        }
+    }
+
+    private async Task RetirarAsync()
+    {
+        if (await EjecutarAsync(a => Revisiones.RetirarDocumentoAsync(a, Id, motivoRetiro)))
+        {
+            retirando = false;
+            motivoRetiro = "";
+            await CargarAsync();
+            Exito = "El documento fue retirado.";
+        }
     }
 
     private async Task CambiarSubAreaAsync(ChangeEventArgs e)

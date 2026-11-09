@@ -12,7 +12,9 @@ public sealed record AreaDto(
     string Nombre,
     bool Activa,
     IReadOnlyList<SubAreaDto> SubAreas,
-    IReadOnlyList<int> TipoIds);
+    IReadOnlyList<int> TipoIds,
+    Guid? DuenoId = null,
+    string? NombreDueno = null);
 
 /// <summary>
 /// Catálogo configurable (6.1.1): áreas, subáreas, tipos de documento y su asociación.
@@ -34,6 +36,12 @@ public interface ICatalogoService
 
     /// <summary>El código de un área no cambia: forma parte del código de sus documentos.</summary>
     Task ActualizarAreaAsync(Actor actor, int areaId, string nombre, bool activa, CancellationToken ct = default);
+
+    /// <summary>
+    /// Designa (o quita, con null) al dueño del área: una persona con rol Aprobador que aprueba las
+    /// revisiones menores. Debe haber entrado al sistema para que se conozca su rol.
+    /// </summary>
+    Task EstablecerDuenoDeAreaAsync(Actor actor, int areaId, Guid? usuarioId, CancellationToken ct = default);
 
     Task<int> CrearSubAreaAsync(Actor actor, int areaId, string nombre, CancellationToken ct = default);
 

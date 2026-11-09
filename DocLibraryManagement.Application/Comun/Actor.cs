@@ -14,6 +14,12 @@ public sealed record Actor(
     IReadOnlySet<string> Areas,
     string? DireccionIp = null)
 {
+    /// <summary>Identificador con el que la bitácora registra lo que hace el sistema por sí mismo (tareas programadas).</summary>
+    public const string IdentificadorSistema = "SISTEMA";
+
+    /// <summary>Actor para tareas automáticas. No tiene roles: no puede usarse para operaciones de usuario.</summary>
+    public static Actor Sistema { get; } = new(IdentificadorSistema, new HashSet<RolSistema>(), new HashSet<string>());
+
     public bool EsAdministrador => Roles.Contains(RolSistema.Administrador);
 
     public bool TieneRol(RolSistema rol) => Roles.Contains(rol);

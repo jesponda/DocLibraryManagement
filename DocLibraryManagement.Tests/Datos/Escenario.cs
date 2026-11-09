@@ -39,6 +39,7 @@ public sealed class Escenario : IDisposable
             .Build();
 
         var services = new ServiceCollection();
+        services.AddLogging(); // el host real lo trae; este contenedor mínimo no
         services.AddInfrastructure(config);
         services.AddSingleton<TimeProvider>(Reloj);
         _sp = services.BuildServiceProvider();
@@ -60,6 +61,9 @@ public sealed class Escenario : IDisposable
     public IFlujoService Flujo => _scope.ServiceProvider.GetRequiredService<IFlujoService>();
 
     public string RutaArchivos { get; }
+
+    /// <summary>Proveedor del ámbito del escenario, para resolver servicios que no tienen atajo propio.</summary>
+    public IServiceProvider Scope() => _scope.ServiceProvider;
 
     /// <summary>PDF mínimo pero con la firma correcta. Cada llamada puede variar el contenido con <paramref name="marca"/>.</summary>
     public static byte[] PdfDePrueba(string marca = "base") =>
@@ -118,6 +122,45 @@ public sealed class Escenario : IDisposable
 
     public async Task<InstanciaFlujoDto> UltimoFlujoAsync(EscenarioFlujo f) =>
         (await Flujo.HistorialAsync(f.Autor, f.RevisionId)).First();
+
+    /// <summary>Sube un PDF e inicia el flujo de una revisión (cualquiera, no solo la primera) con el revisor y aprobador del escenario.</summary>
+    public async Task EnviarRevisionAsync(EscenarioFlujo f, int revisionId, string marca = "nueva")
+    {
+        await SubirPdfAsync(f.Autor, revisionId, marca);
+        await Flujo.IniciarAsync(f.Autor, revisionId, [new AsignacionPaso(1, f.RevisorId), new AsignacionPaso(2, f.AprobadorId)]);
+    }
+
+    /// <summary>Resuelve en orden todas las etapas pendientes aprobando. La fecha de vigencia se aplica en la última.</summary>
+    public async Task AprobarRevisionAsync(EscenarioFlujo f, int revisionId, DateTime? vigenciaUtc = null)
+    {
+        while (true)
+        {
+            var flujo = (await Flujo.HistorialAsync(f.Autor, revisionId)).First();
+            var paso = flujo.Pasos.Where(p => p.Estado == EstadoPaso.Pendiente).OrderBy(p => p.Orden).FirstOrDefault();
+            if (flujo.Estado != EstadoFlujo.EnCurso || paso is null)
+            {
+                return;
+            }
+
+            var decisor = paso.Clase == TipoPaso.Revision ? f.Revisor : f.Aprobador;
+            await Flujo.DecidirAsync(decisor, paso.Id, aprobar: true, comentario: null, vigenciaUtc);
+        }
+    }
+
+    /// <summary>Lleva la primera revisión hasta Vigente (envío + dos aprobaciones).</summary>
+    public async Task PublicarPrimeraAsync(EscenarioFlujo f, DateTime? vigenciaUtc = null)
+    {
+        await IniciarAsync(f);
+        await AprobarRevisionAsync(f, f.RevisionId, vigenciaUtc);
+    }
+
+    /// <summary>Estado de todas las revisiones del documento, por etiqueta.</summary>
+    public async Task<Dictionary<string, EstadoRevision>> EstadosDelDocumentoAsync(int documentoId)
+    {
+        await using var db = Db();
+        var revisiones = await db.Revisiones.AsNoTracking().Where(r => r.DocumentoId == documentoId).ToListAsync();
+        return revisiones.GroupBy(r => r.Etiqueta).ToDictionary(g => g.Key, g => g.Last().Estado);
+    }
 
     public async Task<EstadoRevision> EstadoRevisionAsync(int revisionId)
     {

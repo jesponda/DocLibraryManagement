@@ -12,6 +12,14 @@ public class Area
 
     public bool Activa { get; set; } = true;
 
+    /// <summary>
+    /// Dueño del área: persona con rol Aprobador que aprueba las revisiones menores (correcciones
+    /// editoriales) de los documentos del área. Opcional; sin dueño no se pueden enviar revisiones menores.
+    /// </summary>
+    public Guid? DuenoId { get; set; }
+
+    public Usuario? Dueno { get; set; }
+
     public List<SubArea> SubAreas { get; set; } = [];
 
     public List<AreaTipoDocumento> TiposDocumento { get; set; } = [];

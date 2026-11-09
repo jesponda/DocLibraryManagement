@@ -31,6 +31,16 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
 
     public string CodigoDocumento { get; private set; } = "";
 
+    public int DocumentoPublicadoId { get; private set; }
+
+    public int RevisionPublicadaId { get; private set; }
+
+    public string CodigoPublicado { get; private set; } = "";
+
+    public int DocumentoEnAprobacionId { get; private set; }
+
+    public string CodigoEnAprobacion { get; private set; } = "";
+
     private static byte[] Escenario_Pdf() =>
         System.Text.Encoding.ASCII.GetBytes("%PDF-1.4\n% prueba web\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
 
@@ -40,6 +50,7 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
         builder.UseSetting("ConnectionStrings:DefaultConnection",
             $"Server=(localdb)\\mssqllocaldb;Database={_baseDatos};Trusted_Connection=True");
         builder.UseSetting("Archivos:RutaBase", _carpetaArchivos);
+        builder.UseSetting("Publicacion:MinutosEntreRevisiones", "0"); // sin proceso de fondo: las pruebas controlan cuándo corre
     }
 
     /// <summary>Cliente que conserva cookies (sesión) y NO sigue redirecciones, para ver cada respuesta tal cual.</summary>
@@ -109,6 +120,36 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
 
         await flujo.IniciarAsync(autor, RevisionId,
             [new AsignacionPaso(1, ids["DEV\\revisor"]), new AsignacionPaso(2, ids["DEV\\aprobador"])]);
+
+        // El aprobador es también dueño del área (aprueba las revisiones menores).
+        await catalogo.EstablecerDuenoDeAreaAsync(admin, areaId, ids["DEV\\aprobador"]);
+
+        var documentos = sp.GetRequiredService<IDocumentoService>();
+        var revisiones = sp.GetRequiredService<IRevisionService>();
+
+        async Task<(DocumentoDetalleDto Doc, int RevisionId, IReadOnlyList<PasoInstanciaDto> Pasos)> EnviarNuevoAsync(string titulo)
+        {
+            var d = await documentos.CrearAsync(autor, new NuevoDocumento(titulo, areaId, null, tipoId));
+            var revId = d.Revisiones.Single().Id;
+            using var pdfNuevo = new MemoryStream(ContenidoPdf);
+            await revisiones.SubirArchivoAsync(autor, revId, TipoArchivo.Pdf, "x.pdf", pdfNuevo);
+            await flujo.IniciarAsync(autor, revId, [new AsignacionPaso(1, ids["DEV\\revisor"]), new AsignacionPaso(2, ids["DEV\\aprobador"])]);
+            return (d, revId, (await flujo.HistorialAsync(autor, revId)).First().Pasos);
+        }
+
+        // Un documento ya publicado (vigente).
+        var publicado = await EnviarNuevoAsync("Instructivo publicado");
+        await flujo.DecidirAsync(revisor, publicado.Pasos[0].Id, true, null);
+        await flujo.DecidirAsync(aprobador, publicado.Pasos[1].Id, true, null);
+        DocumentoPublicadoId = publicado.Doc.Id;
+        RevisionPublicadaId = publicado.RevisionId;
+        CodigoPublicado = publicado.Doc.Codigo;
+
+        // Un documento al que solo le falta la aprobación final: es el turno del aprobador.
+        var enAprobacion = await EnviarNuevoAsync("Procedimiento por aprobar");
+        await flujo.DecidirAsync(revisor, enAprobacion.Pasos[0].Id, true, null);
+        DocumentoEnAprobacionId = enAprobacion.Doc.Id;
+        CodigoEnAprobacion = enAprobacion.Doc.Codigo;
     }
 
     public new async Task DisposeAsync()

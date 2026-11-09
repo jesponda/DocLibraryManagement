@@ -26,6 +26,7 @@ internal sealed class CatalogoService(IDbContextFactory<AppDbContext> fabrica, T
             .Where(a => incluirInactivas || a.Activa)
             .Include(a => a.SubAreas.Where(s => incluirInactivas || s.Activa)).ThenInclude(s => s.TiposDocumento)
             .Include(a => a.TiposDocumento)
+            .Include(a => a.Dueno)
             .OrderBy(a => a.Codigo)
             .AsSplitQuery()
             .ToListAsync(ct);
@@ -35,7 +36,8 @@ internal sealed class CatalogoService(IDbContextFactory<AppDbContext> fabrica, T
             a.SubAreas.OrderBy(s => s.Nombre)
                 .Select(s => new SubAreaDto(s.Id, s.AreaId, s.Nombre, s.Activa, s.TiposDocumento.Select(t => t.TipoDocumentoId).ToList()))
                 .ToList(),
-            a.TiposDocumento.Select(t => t.TipoDocumentoId).ToList())).ToList();
+            a.TiposDocumento.Select(t => t.TipoDocumentoId).ToList(),
+            a.DuenoId, a.Dueno?.NombreVisible)).ToList();
     }
 
     public async Task<IReadOnlyList<TipoDocumentoDto>> ListarTiposAsync(bool incluirInactivos = false, CancellationToken ct = default)
@@ -114,6 +116,35 @@ internal sealed class CatalogoService(IDbContextFactory<AppDbContext> fabrica, T
         area.Activa = activa;
         Bitacora.Registrar(db, reloj, actor, "Area.Actualizar", nameof(Area), area.Codigo,
             anterior, $"Nombre={nom}; Activa={activa}");
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task EstablecerDuenoDeAreaAsync(Actor actor, int areaId, Guid? usuarioId, CancellationToken ct = default)
+    {
+        ExigirAdministrador(actor);
+
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var area = await db.Areas.Include(a => a.Dueno).FirstOrDefaultAsync(a => a.Id == areaId, ct)
+            ?? throw new ReglaNegocioException("El área no existe.");
+
+        Usuario? nuevo = null;
+        if (usuarioId is { } id)
+        {
+            nuevo = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == id, ct)
+                ?? throw new ReglaNegocioException("La persona indicada no existe.");
+
+            if (!nuevo.Activo || !nuevo.TuvoRolEnUltimoAcceso(RolSistema.Aprobador))
+            {
+                throw new ReglaNegocioException(
+                    $"{nuevo.NombreVisible} no tiene el rol Aprobador (o no ha entrado al sistema), por lo que no puede ser dueño del área.");
+            }
+        }
+
+        var anterior = area.Dueno?.NombreVisible ?? "(sin dueño)";
+        area.DuenoId = nuevo?.Id;
+        Bitacora.Registrar(db, reloj, actor, "Area.Dueno", nameof(Area), area.Codigo,
+            anterior, nuevo?.NombreVisible ?? "(sin dueño)");
 
         await db.SaveChangesAsync(ct);
     }

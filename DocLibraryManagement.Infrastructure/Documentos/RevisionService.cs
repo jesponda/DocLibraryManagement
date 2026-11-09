@@ -54,7 +54,7 @@ internal sealed class RevisionService(
             r.RutaArchivoFuente is not null, r.HashArchivoFuente,
             r.AutorId, r.Autor!.NombreVisible, r.FechaCreacionUtc, r.FechaAprobacionUtc,
             rechazo, EsPrimeraEmision: totalRevisiones == 1 && r.Mayor == 0 && r.Menor == 0,
-            r.Documento.TipoDocumentoId);
+            r.Documento.TipoDocumentoId, r.Mayor, r.Menor, r.FechaVigenciaUtc, r.FechaProximaRevisionUtc);
     }
 
     // ---------- Edición del borrador ----------
@@ -206,6 +206,194 @@ internal sealed class RevisionService(
         Bitacora.Registrar(db, reloj, actor, "Archivo.IntegridadFallida", nameof(Documento), r.Documento!.Codigo,
             comentario: $"{r.Etiqueta} {tipo}: {motivo}");
         await db.SaveChangesAsync(ct);
+    }
+
+    // ---------- Nuevas revisiones ----------
+
+    public async Task<RevisionDetalleDto> CrearRevisionAsync(
+        Actor actor, int documentoId, TipoRevisionNueva tipo, string motivoCambio, string? descripcionCambio,
+        bool declaraQueNoAlteraRequisitos, CancellationToken ct = default)
+    {
+        if (!Enum.IsDefined(tipo))
+        {
+            throw new ReglaNegocioException("El tipo de revisión no es válido.");
+        }
+
+        var motivo = NormalizarMotivo(motivoCambio, "El motivo del cambio es obligatorio.");
+        var descripcion = string.IsNullOrWhiteSpace(descripcionCambio) ? null : descripcionCambio.Trim();
+        if (descripcion is { Length: > MaximoDescripcion })
+        {
+            throw new ReglaNegocioException($"La descripción no puede pasar de {MaximoDescripcion} caracteres.");
+        }
+
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var doc = await db.Documentos
+            .Include(d => d.Area!).ThenInclude(a => a.Dueno)
+            .Include(d => d.Revisiones)
+            .FirstOrDefaultAsync(d => d.Id == documentoId, ct)
+            ?? throw new ReglaNegocioException("El documento no existe.");
+
+        if (!actor.PuedeEditarEnArea(doc.Area!.Codigo))
+        {
+            throw new AccesoDenegadoException($"No tienes permiso para modificar documentos del área {doc.Area.Codigo}.");
+        }
+
+        if (doc.Estado != EstadoDocumento.Activo)
+        {
+            throw new ReglaNegocioException("El documento está retirado y no admite revisiones nuevas.");
+        }
+
+        if (doc.Revisiones.FirstOrDefault(r => r.Estado.EsAbierta()) is { } abierta)
+        {
+            throw new ReglaNegocioException(
+                $"Ya hay una revisión en curso ({abierta.Etiqueta}, {abierta.Estado}). Termínala o descártala antes de abrir otra.");
+        }
+
+        var vigente = doc.Revisiones.FirstOrDefault(r => r.Estado == EstadoRevision.Vigente)
+            ?? throw new ReglaNegocioException("El documento no tiene una revisión vigente de la cual partir.");
+
+        if (tipo == TipoRevisionNueva.Menor)
+        {
+            if (!declaraQueNoAlteraRequisitos)
+            {
+                throw new ReglaNegocioException(
+                    "Para una revisión menor confirma que el cambio no altera requisitos, pasos ni responsabilidades. Si los altera, abre una revisión mayor.");
+            }
+
+            if (doc.Area.Dueno is null)
+            {
+                throw new ReglaNegocioException(
+                    $"El área {doc.Area.Codigo} no tiene un dueño designado para aprobar revisiones menores. Pide a un Administrador que lo designe.");
+            }
+        }
+
+        var usuario = await db.Usuarios.AsNoTracking().FirstOrDefaultAsync(u => u.Identificador == actor.Identificador, ct)
+            ?? throw new ReglaNegocioException("Tu usuario aún no está registrado. Cierra sesión y vuelve a entrar.");
+
+        var (mayor, menor) = ReglasRevision.SiguienteNumero(vigente.Mayor, vigente.Menor, tipo);
+        var nueva = new RevisionDocumento
+        {
+            DocumentoId = doc.Id,
+            Mayor = mayor,
+            Menor = menor,
+            Estado = EstadoRevision.Borrador,
+            MotivoCambio = motivo,
+            DescripcionCambio = descripcion,
+            AutorId = usuario.Id,
+            FechaCreacionUtc = reloj.GetUtcNow().UtcDateTime,
+        };
+        db.Revisiones.Add(nueva);
+
+        Bitacora.Registrar(db, reloj, actor, "Revision.Crear", nameof(Documento), doc.Codigo,
+            anterior: vigente.Etiqueta, nuevo: $"{nueva.Etiqueta} Borrador ({(tipo == TipoRevisionNueva.Menor ? "menor" : "mayor")})",
+            comentario: tipo == TipoRevisionNueva.Menor ? $"Declara que no altera requisitos, pasos ni responsabilidades. Motivo: {motivo}" : motivo);
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (Bitacora.EsViolacionUnica(ex))
+        {
+            // Dos personas abrieron revisión a la vez: el índice de «una sola revisión abierta» deja pasar a una.
+            throw new ReglaNegocioException("Otra persona abrió una revisión de este documento al mismo tiempo. Recarga la página.");
+        }
+
+        return await ObtenerAsync(actor, nueva.Id, ct);
+    }
+
+    public async Task CancelarBorradorAsync(Actor actor, int revisionId, string motivo, CancellationToken ct = default)
+    {
+        var texto = NormalizarMotivo(motivo, "Indica el motivo del descarte.");
+
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var r = await CargarAsync(db, revisionId, ct);
+        ExigirBorradorEditable(actor, r);
+
+        if (!await db.Revisiones.AnyAsync(x => x.DocumentoId == r.DocumentoId && x.Id != r.Id, ct))
+        {
+            throw new ReglaNegocioException(
+                "Es la primera emisión del documento: para descartarla usa «Cancelar este documento», que también retira el código.");
+        }
+
+        r.Estado = EstadoRevision.Cancelado;
+        Bitacora.Registrar(db, reloj, actor, "Revision.CancelarBorrador", nameof(Documento), r.Documento!.Codigo,
+            anterior: $"{r.Etiqueta} Borrador", nuevo: $"{r.Etiqueta} Cancelado", comentario: texto);
+
+        await GuardarAsync(db, ct);
+    }
+
+    public async Task RetirarDocumentoAsync(Actor actor, int documentoId, string motivo, CancellationToken ct = default)
+    {
+        if (!actor.EsAdministrador)
+        {
+            throw new AccesoDenegadoException("Solo un Administrador puede retirar un documento.");
+        }
+
+        var texto = NormalizarMotivo(motivo, "Indica el motivo del retiro.");
+
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var doc = await db.Documentos.Include(d => d.Revisiones)
+            .FirstOrDefaultAsync(d => d.Id == documentoId, ct)
+            ?? throw new ReglaNegocioException("El documento no existe.");
+
+        if (doc.Estado == EstadoDocumento.Retirado)
+        {
+            throw new ReglaNegocioException("El documento ya está retirado.");
+        }
+
+        var cambios = new List<string>();
+        var idsAbiertas = doc.Revisiones.Where(r => r.Estado.EsAbierta()).Select(r => r.Id).ToList();
+
+        // Los flujos en curso se cierran junto con su revisión; si no, quedarían tareas pendientes huérfanas.
+        var flujos = await db.InstanciasFlujo.Include(i => i.Pasos)
+            .Where(i => idsAbiertas.Contains(i.RevisionId) && i.Estado == EstadoFlujo.EnCurso)
+            .ToListAsync(ct);
+        foreach (var flujo in flujos)
+        {
+            flujo.Estado = EstadoFlujo.Cancelado;
+            flujo.FechaFinUtc = reloj.GetUtcNow().UtcDateTime;
+            foreach (var paso in flujo.Pasos.Where(p => p.Estado == EstadoPaso.Pendiente))
+            {
+                paso.Estado = EstadoPaso.Omitido;
+            }
+        }
+
+        foreach (var rev in doc.Revisiones)
+        {
+            if (rev.Estado == EstadoRevision.Vigente)
+            {
+                rev.Estado = EstadoRevision.Obsoleto;
+                cambios.Add($"{rev.Etiqueta} Vigente→Obsoleto");
+            }
+            else if (rev.Estado.EsAbierta())
+            {
+                cambios.Add($"{rev.Etiqueta} {rev.Estado}→Cancelado");
+                rev.Estado = EstadoRevision.Cancelado;
+            }
+        }
+
+        doc.Estado = EstadoDocumento.Retirado;
+        Bitacora.Registrar(db, reloj, actor, "Documento.Retirar", nameof(Documento), doc.Codigo,
+            anterior: "Activo", nuevo: $"Retirado; {(cambios.Count == 0 ? "sin revisiones afectadas" : string.Join("; ", cambios))}",
+            comentario: texto);
+
+        await GuardarAsync(db, ct);
+    }
+
+    private static string NormalizarMotivo(string? motivo, string mensajeObligatorio)
+    {
+        var limpio = (motivo ?? "").Trim();
+        if (limpio.Length == 0)
+        {
+            throw new ReglaNegocioException(mensajeObligatorio);
+        }
+
+        if (limpio.Length > MaximoMotivo)
+        {
+            throw new ReglaNegocioException($"El motivo no puede pasar de {MaximoMotivo} caracteres.");
+        }
+
+        return limpio;
     }
 
     // ---------- Cancelación ----------

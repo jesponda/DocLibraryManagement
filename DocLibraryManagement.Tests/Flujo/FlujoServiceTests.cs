@@ -250,7 +250,7 @@ public class FlujoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDatosFix
     // ---------- Decidir: camino feliz ----------
 
     [Fact]
-    public async Task Aprobar_las_dos_etapas_deja_la_revision_Aprobada_y_el_flujo_completo()
+    public async Task Aprobar_las_dos_etapas_completa_el_flujo_y_publica_la_revision()
     {
         using var e = new Escenario(bd);
         var f = await e.PrepararFlujoAsync();
@@ -262,7 +262,7 @@ public class FlujoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDatosFix
 
         await e.Flujo.DecidirAsync(f.Aprobador, pasos[1].Id, aprobar: true, null);
 
-        Assert.Equal(EstadoRevision.Aprobado, await e.EstadoRevisionAsync(f.RevisionId));
+        Assert.Equal(EstadoRevision.Vigente, await e.EstadoRevisionAsync(f.RevisionId));
         var flujo = await e.UltimoFlujoAsync(f);
         Assert.Equal(EstadoFlujo.Aprobado, flujo.Estado);
         Assert.NotNull(flujo.FechaFinUtc);
@@ -564,7 +564,7 @@ public class FlujoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDatosFix
         await e.Flujo.DecidirAsync(f.Aprobador, pasos[1].Id, true, null);
 
         await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Flujo.CancelarFlujoAsync(f.Autor, f.RevisionId, "tarde"));
-        Assert.Equal(EstadoRevision.Aprobado, await e.EstadoRevisionAsync(f.RevisionId));
+        Assert.Equal(EstadoRevision.Vigente, await e.EstadoRevisionAsync(f.RevisionId));
     }
 
     // ---------- Visibilidad del historial ----------

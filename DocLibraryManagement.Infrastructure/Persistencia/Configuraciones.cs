@@ -12,6 +12,7 @@ internal sealed class AreaConfig : IEntityTypeConfiguration<Area>
         b.Property(x => x.Codigo).HasMaxLength(10).IsRequired();
         b.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
         b.HasIndex(x => x.Codigo).IsUnique();
+        b.HasOne(x => x.Dueno).WithMany().HasForeignKey(x => x.DuenoId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -110,7 +111,10 @@ internal sealed class RevisionDocumentoConfig : IEntityTypeConfiguration<Revisio
         b.HasOne(x => x.Documento).WithMany(d => d.Revisiones).HasForeignKey(x => x.DocumentoId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Autor).WithMany().HasForeignKey(x => x.AutorId).OnDelete(DeleteBehavior.Restrict);
 
-        b.HasIndex(x => new { x.DocumentoId, x.Mayor, x.Menor }).IsUnique();
+        // Un borrador cancelado no consume número (7.1.3): el siguiente borrador puede volver a usar Rev.01.
+        b.HasIndex(x => new { x.DocumentoId, x.Mayor, x.Menor })
+            .IsUnique()
+            .HasFilter("[Estado] <> 'Cancelado'");
 
         // Importante: ambos índices usan la misma columna. EF solo los distingue si se declaran
         // con nombre en HasIndex (HasDatabaseName no basta: el segundo reemplazaría al primero).

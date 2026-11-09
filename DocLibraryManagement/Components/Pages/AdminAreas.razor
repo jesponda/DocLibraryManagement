@@ -3,7 +3,10 @@
 @rendermode InteractiveServer
 @inherits PaginaBase
 @using DocLibraryManagement.Application.Catalogo
+@using DocLibraryManagement.Application.Flujo
+@using DocLibraryManagement.Domain
 @inject ICatalogoService Catalogo
+@inject IFlujoService Flujo
 
 <PageTitle>Áreas y subáreas</PageTitle>
 
@@ -77,6 +80,30 @@ else
                 </div>
                 <div class="col-sm-2"><button class="btn btn-outline-primary" @onclick="GuardarAreaAsync">Guardar</button></div>
             </div>
+
+            <hr />
+            <h2 class="h6">Dueño del área</h2>
+            <p class="text-muted small mb-2">
+                Aprueba las <strong>revisiones menores</strong> (correcciones editoriales) de los documentos del área.
+                Debe tener el rol Aprobador y haber entrado al sistema al menos una vez.
+            </p>
+            <div class="row g-2 align-items-end">
+                <div class="col-sm-7">
+                    <label class="form-label" for="dueno">Persona</label>
+                    <select id="dueno" class="form-select" @bind="duenoElegido">
+                        <option value="">Sin dueño</option>
+                        @foreach (var c in aprobadores)
+                        {
+                            <option value="@c.UsuarioId">@c.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-sm-3"><button class="btn btn-outline-primary" @onclick="GuardarDuenoAsync">Guardar dueño</button></div>
+            </div>
+            @if (seleccionada.DuenoId is null)
+            {
+                <p class="text-warning small mt-2 mb-0">Sin dueño: no se podrán enviar revisiones menores de esta área.</p>
+            }
 
             <hr />
             <h2 class="h6">Tipos de documento que se pueden crear en esta área</h2>
@@ -183,6 +210,8 @@ else
     private string areaNombre = "";
     private bool areaActiva = true;
     private HashSet<int> tiposArea = [];
+    private IReadOnlyList<CandidatoDto> aprobadores = [];
+    private string duenoElegido = "";
 
     private SubAreaDto? subSeleccionada;
     private string subNombre = "";
@@ -200,6 +229,7 @@ else
 
         areas = [.. await Catalogo.ListarAreasAsync(incluirInactivas: true)];
         tipos = [.. await Catalogo.ListarTiposAsync(incluirInactivos: true)];
+        aprobadores = await Flujo.CandidatosAsync(TipoPaso.Aprobacion);
 
         seleccionada = areas.FirstOrDefault(a => a.Id == areaId);
         subSeleccionada = seleccionada?.SubAreas.FirstOrDefault(s => s.Id == subId);
@@ -219,6 +249,17 @@ else
         areaNombre = a.Nombre;
         areaActiva = a.Activa;
         tiposArea = [.. a.TipoIds];
+        duenoElegido = a.DuenoId?.ToString() ?? "";
+    }
+
+    private async Task GuardarDuenoAsync()
+    {
+        Guid? dueno = Guid.TryParse(duenoElegido, out var id) ? id : null;
+        if (await EjecutarAsync(a => Catalogo.EstablecerDuenoDeAreaAsync(a, seleccionada!.Id, dueno),
+                dueno is null ? "Se quitó el dueño del área." : "Dueño del área guardado."))
+        {
+            await CargarAsync();
+        }
     }
 
     private void CargarEdicionSub(SubAreaDto s)

@@ -114,14 +114,14 @@ public class WebHttpTests(AplicacionWebFixture app) : IClassFixture<AplicacionWe
     }
 
     [Fact]
-    public async Task El_aprobador_aun_no_tiene_turno_ni_tarea()
+    public async Task El_aprobador_no_tiene_tarea_donde_aun_no_es_su_turno_pero_si_donde_ya_lo_es()
     {
-        var (_, _, detalle) = await PedirAsync("aprobador", $"/documentos/{app.DocumentoId}");
+        var (_, _, detalle) = await PedirAsync("aprobador", $"/documentos/{app.DocumentoId}");   // espera al revisor
         var (_, _, bandeja) = await PedirAsync("aprobador", "/pendientes");
 
         Assert.DoesNotContain("Tu decisión", detalle);
         Assert.DoesNotContain(app.CodigoDocumento, bandeja);
-        Assert.Contains("No tienes documentos esperando tu decisión", bandeja);
+        Assert.Contains(app.CodigoEnAprobacion, bandeja);                                     // el revisor ya aprobó: le toca
     }
 
     [Fact]
@@ -161,6 +161,76 @@ public class WebHttpTests(AplicacionWebFixture app) : IClassFixture<AplicacionWe
         Assert.Contains("Documentos", admin);
         Assert.DoesNotContain("Mis tareas", lector);
         Assert.DoesNotContain("Documentos Mi acceso", lector);
+    }
+
+    // ---------- Publicación, nuevas revisiones y retiro ----------
+
+    [Fact]
+    public async Task Un_documento_publicado_muestra_su_vigencia_y_ofrece_nueva_revision_al_autor()
+    {
+        var (estado, _, autor) = await PedirAsync("autor-cal", $"/documentos/{app.DocumentoPublicadoId}");
+
+        Assert.Equal(HttpStatusCode.OK, estado);
+        Assert.Contains("Vigente", autor);
+        Assert.Contains("Vigente desde", autor);
+        Assert.Contains("Próxima revisión periódica", autor);
+        Assert.Contains("Nueva revisión", autor);
+        Assert.DoesNotContain("Retirar documento", autor); // retirar es solo del Administrador
+    }
+
+    [Fact]
+    public async Task Solo_el_Administrador_ve_la_opcion_de_retirar()
+    {
+        var (_, _, admin) = await PedirAsync("admin", $"/documentos/{app.DocumentoPublicadoId}");
+        var (_, _, auditor) = await PedirAsync("auditor", $"/documentos/{app.DocumentoPublicadoId}");
+
+        Assert.Contains("Retirar documento", admin);
+        Assert.DoesNotContain("Retirar documento", auditor);
+        Assert.DoesNotContain("Nueva revisión", auditor); // el Auditor solo consulta
+    }
+
+    [Fact]
+    public async Task Con_una_revision_en_curso_no_se_ofrece_abrir_otra()
+    {
+        var (_, _, autor) = await PedirAsync("autor-cal", $"/documentos/{app.DocumentoId}");
+
+        Assert.DoesNotContain("Nueva revisión…", autor);
+    }
+
+    [Fact]
+    public async Task La_ultima_etapa_ofrece_fecha_de_vigencia_y_la_intermedia_no()
+    {
+        var (_, _, ultima) = await PedirAsync("aprobador", $"/documentos/{app.DocumentoEnAprobacionId}");
+        var (_, _, intermedia) = await PedirAsync("revisor", $"/documentos/{app.DocumentoId}");
+
+        Assert.Contains("Tu decisión", ultima);
+        Assert.Contains("Entra en vigor a partir de", ultima);
+        Assert.Contains("última etapa", ultima);
+        Assert.Contains("Tu decisión", intermedia);
+        Assert.DoesNotContain("Entra en vigor a partir de", intermedia);
+    }
+
+    [Fact]
+    public async Task El_PDF_vigente_es_de_lectura_abierta_pero_el_borrador_no()
+    {
+        using var lector = await app.ClienteComoAsync("lector");
+
+        using var vigente = await lector.GetAsync($"/archivos/{app.RevisionPublicadaId}/pdf");
+        using var enFlujo = await lector.GetAsync($"/archivos/{app.RevisionId}/pdf");
+
+        Assert.Equal(HttpStatusCode.OK, vigente.StatusCode);
+        Assert.Equal(app.ContenidoPdf, await vigente.Content.ReadAsByteArrayAsync());
+        Assert.Equal(HttpStatusCode.Forbidden, enFlujo.StatusCode);
+    }
+
+    [Fact]
+    public async Task La_pantalla_de_areas_ofrece_designar_al_dueno()
+    {
+        var (_, _, t) = await PedirAsync("admin", "/administracion/areas");
+
+        Assert.Contains("Calidad", t);
+        // El panel de gestión del área se abre con un clic; aquí se comprueba que la pantalla carga con el área sembrada.
+        Assert.Contains("Gestionar", t);
     }
 
     // ---------- Descarga de archivos ----------

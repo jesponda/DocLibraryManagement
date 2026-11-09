@@ -38,6 +38,9 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
 
+                    b.Property<Guid?>("DuenoId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -47,6 +50,8 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
 
                     b.HasIndex("Codigo")
                         .IsUnique();
+
+                    b.HasIndex("DuenoId");
 
                     b.ToTable("Areas");
                 });
@@ -380,7 +385,8 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.HasIndex("AutorId");
 
                     b.HasIndex("DocumentoId", "Mayor", "Menor")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[Estado] <> 'Cancelado'");
 
                     b.HasIndex(new[] { "DocumentoId" }, "UX_Revision_UnicaAbierta")
                         .IsUnique()
@@ -515,6 +521,16 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                         .IsUnique();
 
                     b.ToTable("Usuarios");
+                });
+
+            modelBuilder.Entity("DocLibraryManagement.Domain.Area", b =>
+                {
+                    b.HasOne("DocLibraryManagement.Domain.Usuario", "Dueno")
+                        .WithMany()
+                        .HasForeignKey("DuenoId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Dueno");
                 });
 
             modelBuilder.Entity("DocLibraryManagement.Domain.AreaTipoDocumento", b =>

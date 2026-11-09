@@ -59,6 +59,34 @@ else
             }
             <p class="text-muted small mb-0">Elaborada por @rev.Autor el @rev.FechaCreacionUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm").</p>
 
+            @if (rev.Estado == EstadoRevision.Vigente && rev.FechaVigenciaUtc is not null)
+            {
+                <p class="mb-0 mt-2">
+                    <strong>Vigente desde</strong> @rev.FechaVigenciaUtc.Value.ToLocalTime().ToString("dd/MM/yyyy").
+                    @if (rev.FechaProximaRevisionUtc is not null)
+                    {
+                        <span><strong>Próxima revisión periódica:</strong> @rev.FechaProximaRevisionUtc.Value.ToLocalTime().ToString("dd/MM/yyyy").</span>
+                    }
+                </p>
+            }
+            else if (rev.Estado == EstadoRevision.Aprobado && rev.FechaVigenciaUtc is not null)
+            {
+                <div class="alert alert-info mt-2 mb-0">
+                    Aprobada. <strong>Entrará en vigor el @rev.FechaVigenciaUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong>;
+                    mientras tanto sigue vigente la revisión anterior.
+                </div>
+            }
+            else if (rev.Estado == EstadoRevision.Obsoleto)
+            {
+                <div class="alert alert-secondary mt-2 mb-0">
+                    <strong>OBSOLETA.</strong> Esta revisión fue reemplazada y se conserva solo para consulta de auditoría. No debe usarse.
+                </div>
+            }
+            else if (rev.Estado == EstadoRevision.Cancelado)
+            {
+                <div class="alert alert-secondary mt-2 mb-0">Este borrador fue cancelado y no llegó a emitirse.</div>
+            }
+
             <hr />
             <h2 class="h6">Archivos</h2>
             <div class="mb-3">
@@ -109,6 +137,10 @@ else
                 {
                     <button class="btn btn-outline-danger ms-2" @onclick="() => confirmandoCancelacion = !confirmandoCancelacion">Cancelar este documento…</button>
                 }
+                else
+                {
+                    <button class="btn btn-outline-danger ms-2" @onclick="() => confirmandoDescarte = !confirmandoDescarte">Descartar este borrador…</button>
+                }
             }
         </div>
     </div>
@@ -126,12 +158,40 @@ else
         </div>
     }
 
+    @if (puedeEditar && confirmandoDescarte)
+    {
+        <div class="card border-danger mb-3" style="max-width: 56rem">
+            <div class="card-body">
+                <p>El borrador se descartará y <strong>@rev.Etiqueta</strong> volverá a estar disponible para la próxima revisión. La revisión vigente no se afecta.</p>
+                <label class="form-label" for="motivoDescarte">Motivo</label>
+                <input id="motivoDescarte" class="form-control mb-2" maxlength="1000" @bind="motivoDescarte" />
+                <button class="btn btn-danger" @onclick="DescartarBorradorAsync">Descartar borrador</button>
+                <button class="btn btn-link" @onclick="() => confirmandoDescarte = false">Volver</button>
+            </div>
+        </div>
+    }
+
     @if (puedeEditar && enviando)
     {
         <div class="card border-primary mb-3" style="max-width: 56rem">
             <div class="card-header">Enviar a revisión</div>
             <div class="card-body">
-                @if (plantilla.Count == 0)
+                @if (plan is { EsMenor: true })
+                {
+                    <p>Es una <strong>revisión menor</strong> (corrección editorial): se aprueba en una sola etapa.</p>
+                    @if (plan.DuenoId is null)
+                    {
+                        <div class="alert alert-warning mb-2">
+                            Esta área no tiene un dueño designado para aprobar revisiones menores. Pide a un Administrador que lo designe.
+                        </div>
+                    }
+                    else
+                    {
+                        <p>La aprobará el dueño del área: <strong>@plan.NombreDueno</strong>.</p>
+                        <button class="btn btn-primary" @onclick="EnviarAsync">Enviar</button>
+                    }
+                }
+                else if (plantilla.Count == 0)
                 {
                     <div class="alert alert-warning mb-0">Este tipo de documento no tiene un flujo configurado. Pide a un Administrador que lo configure.</div>
                 }
@@ -244,6 +304,18 @@ else
                 <p class="mb-2">Revisa el PDF y decide. Si rechazas, explica qué debe corregirse.</p>
                 <label class="form-label" for="comentario">Comentario <span class="text-muted">(obligatorio al rechazar)</span></label>
                 <textarea id="comentario" class="form-control mb-2" rows="3" maxlength="2000" @bind="comentarioDecision"></textarea>
+                @if (EsUltimaEtapa)
+                {
+                    <div class="mb-2" style="max-width: 20rem">
+                        <label class="form-label" for="vigencia">Entra en vigor a partir de <span class="text-muted">(opcional)</span></label>
+                        <input id="vigencia" type="date" class="form-control" min="@DateTime.Today.AddDays(1).ToString("yyyy-MM-dd")"
+                               value="@vigenciaTexto" @onchange="e => vigenciaTexto = e.Value?.ToString() ?? string.Empty" />
+                        <div class="form-text">
+                            Esta es la <strong>última etapa</strong>: al aprobar, la revisión se publica y la anterior queda obsoleta.
+                            Si dejas la fecha vacía es de inmediato; con una fecha futura, la anterior sigue vigente hasta entonces.
+                        </div>
+                    </div>
+                }
                 <button class="btn btn-success" @onclick="() => DecidirAsync(true)">Aprobar</button>
                 <button class="btn btn-danger ms-2" @onclick="() => DecidirAsync(false)">Rechazar</button>
             </div>
@@ -283,6 +355,7 @@ else
     private string descripcion = "";
 
     private bool enviando;
+    private PlanEnvioDto? plan;
     private List<PasoPlantillaDto> plantilla = [];
     private readonly Dictionary<TipoPaso, List<CandidatoDto>> candidatos = [];
     private readonly Dictionary<int, Guid> asignaciones = [];
@@ -290,8 +363,20 @@ else
     private bool confirmandoCancelacion;
     private string motivoCancelacion = "";
 
+    private bool confirmandoDescarte;
+    private string motivoDescarte = "";
+
     private bool cancelandoFlujo;
     private string motivoCancelacionFlujo = "";
+
+    private string vigenciaTexto = "";
+
+    /// <summary>La etapa que decide el usuario es la última del flujo: aprobarla publica la revisión.</summary>
+    private bool EsUltimaEtapa =>
+        miTarea is not null
+        && historial.FirstOrDefault() is { } actual
+        && actual.Pasos.Where(p => p.Estado == EstadoPaso.Pendiente).Count() == 1
+        && actual.Pasos.Any(p => p.Id == miTarea.PasoId && p.Estado == EstadoPaso.Pendiente);
 
     private PasoInstanciaDto? reasignando;
     private string nuevoResponsable = "";
@@ -378,7 +463,13 @@ else
         asignaciones.Clear();
         await EjecutarAsync(async _ =>
         {
-            plantilla = [.. await Flujo.ObtenerPlantillaAsync(rev!.TipoDocumentoId)];
+            plan = await Flujo.ObtenerPlanEnvioAsync(rev!.Id);
+            plantilla = [.. plan.Pasos];
+            if (plan.EsMenor)
+            {
+                return; // la única etapa es del dueño del área: no hay nada que elegir
+            }
+
             foreach (var clase in plantilla.Select(p => p.Clase).Distinct())
             {
                 // El autor de la revisión nunca es candidato: el servicio también lo rechazaría.
@@ -417,10 +508,32 @@ else
 
     private async Task DecidirAsync(bool aprobar)
     {
-        if (await EjecutarAsync(a => Flujo.DecidirAsync(a, miTarea!.PasoId, aprobar, comentarioDecision),
-                aprobar ? "Aprobaste la etapa." : "Rechazaste la revisión; regresó a borrador."))
+        DateTime? vigenciaUtc = null;
+        if (aprobar && EsUltimaEtapa && DateOnly.TryParse(vigenciaTexto, out var fecha))
+        {
+            // El usuario elige un día; entra en vigor a las 00:00 de ese día en la hora local de la planta.
+            var local = DateTime.SpecifyKind(fecha.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
+            vigenciaUtc = TimeZoneInfo.ConvertTimeToUtc(local, TimeZoneInfo.Local);
+        }
+
+        var etiquetaPublica = aprobar && EsUltimaEtapa;
+        if (await EjecutarAsync(a => Flujo.DecidirAsync(a, miTarea!.PasoId, aprobar, comentarioDecision, vigenciaUtc),
+                !aprobar ? "Rechazaste la revisión; regresó a borrador."
+                : etiquetaPublica ? "Aprobaste la última etapa: la revisión quedó publicada (o programada para su fecha)."
+                : "Aprobaste la etapa."))
         {
             comentarioDecision = "";
+            vigenciaTexto = "";
+            await NotificarAsync();
+        }
+    }
+
+    private async Task DescartarBorradorAsync()
+    {
+        if (await EjecutarAsync(a => Revisiones.CancelarBorradorAsync(a, RevisionId, motivoDescarte), "Borrador descartado."))
+        {
+            confirmandoDescarte = false;
+            motivoDescarte = "";
             await NotificarAsync();
         }
     }

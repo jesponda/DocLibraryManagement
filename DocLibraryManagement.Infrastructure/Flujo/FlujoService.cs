@@ -1,4 +1,5 @@
 using DocLibraryManagement.Application.Comun;
+using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Application.Flujo;
 using DocLibraryManagement.Domain;
 using DocLibraryManagement.Infrastructure.Documentos;
@@ -14,6 +15,44 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
 
     private const string MensajeAutorNoPuede =
         "El autor de la revisión no puede revisarla ni aprobarla (separación de funciones).";
+
+    private const string NombrePasoMenor = "Aprobación (revisión menor)";
+
+    // ---------- Plan de envío ----------
+
+    public async Task<PlanEnvioDto> ObtenerPlanEnvioAsync(int revisionId, CancellationToken ct = default)
+    {
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var r = await db.Revisiones.AsNoTracking()
+            .Include(x => x.Documento!).ThenInclude(d => d.Area!).ThenInclude(a => a.Dueno)
+            .FirstOrDefaultAsync(x => x.Id == revisionId, ct)
+            ?? throw new ReglaNegocioException("La revisión no existe.");
+
+        if (r.Menor > 0)
+        {
+            var dueno = r.Documento!.Area!.Dueno;
+            return new PlanEnvioDto(true, [new PasoPlantillaDto(1, TipoPaso.Aprobacion, NombrePasoMenor)], dueno?.Id, dueno?.NombreVisible);
+        }
+
+        var pasos = await db.PasosPlantilla.AsNoTracking()
+            .Where(p => p.TipoDocumentoId == r.Documento!.TipoDocumentoId)
+            .OrderBy(p => p.Orden)
+            .Select(p => new PasoPlantillaDto(p.Orden, p.Clase, p.Nombre))
+            .ToListAsync(ct);
+        return new PlanEnvioDto(false, pasos, null, null);
+    }
+
+    /// <summary>El dueño del área debe existir, estar activo, seguir siendo Aprobador y no ser el autor.</summary>
+    private static Usuario ValidarDueno(Area area, Guid autorId)
+    {
+        if (area.Dueno is null)
+        {
+            throw new ReglaNegocioException(
+                $"El área {area.Codigo} no tiene un dueño designado para aprobar revisiones menores. Pide a un Administrador que lo designe.");
+        }
+
+        return ValidarAsignado(area.Dueno, TipoPaso.Aprobacion, autorId, NombrePasoMenor);
+    }
 
     // ---------- Plantillas ----------
 
@@ -115,30 +154,43 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
             throw new ReglaNegocioException("Sube el PDF antes de enviar la revisión a revisión.");
         }
 
-        var plantilla = await db.PasosPlantilla.AsNoTracking()
-            .Where(p => p.TipoDocumentoId == r.Documento.TipoDocumentoId)
-            .OrderBy(p => p.Orden)
-            .ToListAsync(ct);
-        if (plantilla.Count == 0)
-        {
-            throw new ReglaNegocioException("Este tipo de documento no tiene un flujo configurado. Pide a un Administrador que lo configure.");
-        }
-
-        var porOrden = asignaciones.GroupBy(a => a.Orden).ToDictionary(g => g.Key, g => g.ToList());
-        if (porOrden.Any(kv => kv.Value.Count > 1) || plantilla.Any(p => !porOrden.ContainsKey(p.Orden))
-            || porOrden.Keys.Any(o => plantilla.All(p => p.Orden != o)))
-        {
-            throw new ReglaNegocioException("Asigna exactamente una persona a cada etapa del flujo.");
-        }
-
-        var ids = asignaciones.Select(a => a.UsuarioId).Distinct().ToList();
-        var usuarios = await db.Usuarios.Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, ct);
-
         var pasos = new List<PasoInstancia>();
-        foreach (var p in plantilla)
+        var nombres = new Dictionary<Guid, string>();
+
+        if (r.Menor > 0)
         {
-            var asignado = ValidarAsignado(usuarios.GetValueOrDefault(porOrden[p.Orden][0].UsuarioId), p.Clase, r.AutorId, p.Nombre);
-            pasos.Add(new PasoInstancia { Orden = p.Orden, Clase = p.Clase, Nombre = p.Nombre, AsignadoAId = asignado.Id });
+            // Revisión menor: una sola aprobación, siempre del dueño del área. Las asignaciones recibidas se ignoran.
+            var dueno = ValidarDueno(r.Documento.Area!, r.AutorId);
+            pasos.Add(new PasoInstancia { Orden = 1, Clase = TipoPaso.Aprobacion, Nombre = NombrePasoMenor, AsignadoAId = dueno.Id });
+            nombres[dueno.Id] = dueno.NombreVisible;
+        }
+        else
+        {
+            var plantilla = await db.PasosPlantilla.AsNoTracking()
+                .Where(p => p.TipoDocumentoId == r.Documento.TipoDocumentoId)
+                .OrderBy(p => p.Orden)
+                .ToListAsync(ct);
+            if (plantilla.Count == 0)
+            {
+                throw new ReglaNegocioException("Este tipo de documento no tiene un flujo configurado. Pide a un Administrador que lo configure.");
+            }
+
+            var porOrden = asignaciones.GroupBy(a => a.Orden).ToDictionary(g => g.Key, g => g.ToList());
+            if (porOrden.Any(kv => kv.Value.Count > 1) || plantilla.Any(p => !porOrden.ContainsKey(p.Orden))
+                || porOrden.Keys.Any(o => plantilla.All(p => p.Orden != o)))
+            {
+                throw new ReglaNegocioException("Asigna exactamente una persona a cada etapa del flujo.");
+            }
+
+            var ids = asignaciones.Select(a => a.UsuarioId).Distinct().ToList();
+            var usuarios = await db.Usuarios.Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, ct);
+
+            foreach (var p in plantilla)
+            {
+                var asignado = ValidarAsignado(usuarios.GetValueOrDefault(porOrden[p.Orden][0].UsuarioId), p.Clase, r.AutorId, p.Nombre);
+                pasos.Add(new PasoInstancia { Orden = p.Orden, Clase = p.Clase, Nombre = p.Nombre, AsignadoAId = asignado.Id });
+                nombres[asignado.Id] = asignado.NombreVisible;
+            }
         }
 
         var numero = (await db.InstanciasFlujo.Where(i => i.RevisionId == revisionId).MaxAsync(i => (int?)i.Numero, ct) ?? 0) + 1;
@@ -155,7 +207,7 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
 
         r.Estado = pasos[0].Clase.EstadoDeRevision();
 
-        var resumen = string.Join("; ", pasos.Select(p => $"{p.Orden}.{p.Nombre}→{usuarios[p.AsignadoAId].NombreVisible}"));
+        var resumen = string.Join("; ", pasos.Select(p => $"{p.Orden}.{p.Nombre}→{nombres[p.AsignadoAId]}"));
         Bitacora.Registrar(db, reloj, actor, "Flujo.Iniciar", nameof(Documento), r.Documento.Codigo,
             anterior: $"{r.Etiqueta} Borrador", nuevo: $"{r.Etiqueta} {r.Estado}; flujo #{numero}: {resumen}");
 
@@ -219,7 +271,7 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
 
     // ---------- Decidir ----------
 
-    public async Task DecidirAsync(Actor actor, int pasoId, bool aprobar, string? comentario, CancellationToken ct = default)
+    public async Task DecidirAsync(Actor actor, int pasoId, bool aprobar, string? comentario, DateTime? vigenciaUtc = null, CancellationToken ct = default)
     {
         var texto = ReglasFlujo.NormalizarComentario(comentario, obligatorio: !aprobar,
             "Al rechazar debes explicar el motivo para que el autor sepa qué corregir.");
@@ -230,7 +282,7 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
         var paso = await db.PasosInstancia
             .Include(p => p.AsignadoA)
             .Include(p => p.Instancia!).ThenInclude(i => i.Pasos)
-            .Include(p => p.Instancia!).ThenInclude(i => i.Revision!).ThenInclude(r => r.Documento)
+            .Include(p => p.Instancia!).ThenInclude(i => i.Revision!).ThenInclude(r => r.Documento!).ThenInclude(d => d.TipoDocumento)
             .FirstOrDefaultAsync(p => p.Id == pasoId, ct)
             ?? throw new ReglaNegocioException("La etapa no existe.");
 
@@ -270,6 +322,8 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
         paso.Comentario = texto.Length == 0 ? null : texto;
 
         string resultado;
+        var publicarAhora = false;
+        DateTime vigencia = ahora;
         if (aprobar)
         {
             paso.Estado = EstadoPaso.Aprobado;
@@ -281,11 +335,22 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
             }
             else
             {
+                // Última aprobación: la revisión se publica sola. La fecha se valida ANTES de tocar nada más.
+                (vigencia, publicarAhora) = ReglasRevision.ResolverVigencia(ahora, vigenciaUtc);
                 instancia.Estado = EstadoFlujo.Aprobado;
                 instancia.FechaFinUtc = ahora;
-                revision.Estado = EstadoRevision.Aprobado;
                 revision.FechaAprobacionUtc = ahora;
-                resultado = "Aprobada; flujo completo, revisión Aprobada";
+
+                if (publicarAhora)
+                {
+                    resultado = "Aprobada; flujo completo, se publica de inmediato";
+                }
+                else
+                {
+                    revision.Estado = EstadoRevision.Aprobado;
+                    revision.FechaVigenciaUtc = vigencia;
+                    resultado = $"Aprobada; flujo completo, entrará en vigor el {vigencia:yyyy-MM-dd HH:mm} UTC";
+                }
             }
         }
         else
@@ -305,7 +370,21 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
         Bitacora.Registrar(db, reloj, actor, aprobar ? "Flujo.Aprobar" : "Flujo.Rechazar", nameof(Documento), revision.Documento!.Codigo,
             nuevo: $"{revision.Etiqueta} «{paso.Nombre}»: {resultado}", comentario: paso.Comentario);
 
-        await GuardarAsync(db, ct);
+        if (!publicarAhora)
+        {
+            await GuardarAsync(db, ct);
+            return;
+        }
+
+        try
+        {
+            await Publicacion.PublicarAsync(db, reloj, actor, revision, revision.Documento.Codigo,
+                revision.Documento.TipoDocumento!.MesesRevision, vigencia, ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ReglaNegocioException(MensajeConcurrencia);
+        }
     }
 
     // ---------- Reasignar y cancelar ----------
@@ -381,7 +460,7 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
         ?? throw new ReglaNegocioException("Tu usuario aún no está registrado. Cierra sesión y vuelve a entrar.");
 
     private static async Task<RevisionDocumento> CargarRevisionAsync(AppDbContext db, int id, CancellationToken ct) =>
-        await db.Revisiones.Include(r => r.Documento!).ThenInclude(d => d.Area)
+        await db.Revisiones.Include(r => r.Documento!).ThenInclude(d => d.Area!).ThenInclude(a => a.Dueno)
             .FirstOrDefaultAsync(r => r.Id == id, ct)
         ?? throw new ReglaNegocioException("La revisión no existe.");
 

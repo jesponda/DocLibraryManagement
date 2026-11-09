@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Versión del documento | 1.4 |
+| Versión del documento | 1.5 |
 | Fecha | 2026-11-05 |
 | Estado | Aprobado para iniciar Fase 1 |
 | Norma base | ISO 9001:2015 cláusula 7.5 (Información documentada), estructura Annex SL |
@@ -133,7 +133,8 @@ Documento: Retirado (baja sin sucesor)
 
 - **Borrador:** editable por el Autor del área. Puede cancelarse (se descarta sin consumir número de revisión).
 - **En revisión / En aprobación:** siguen los pasos de la plantilla de flujo. Un rechazo devuelve a Borrador con comentarios obligatorios.
-- **Aprobado:** flujo completo. Si tiene fecha de vigencia futura, espera; si no, pasa a Vigente de inmediato.
+- **Aprobado:** flujo completo, **con fecha de vigencia futura**: espera a que llegue. Sin fecha futura la revisión no se detiene aquí: pasa a Vigente en el acto al dar la última aprobación.
+- **Cancelado:** borrador descartado antes de emitirse. No cuenta como revisión abierta ni consume número de revisión.
 - **Vigente:** única revisión visible como vigente para lectura general.
 - **Obsoleto:** reemplazada por una posterior.
 - **Retirado:** el documento completo se da de baja sin sucesor (requiere aprobación). Su última revisión vigente pasa a Obsoleta.
@@ -223,8 +224,8 @@ Cada fase debe terminar con: código compilando, pruebas pasando, resumen de lo 
 
 **Entrega en tres tramos**, con pausa de revisión al final de cada uno:
 - **2A – Catálogos y creación de documentos** *(entregado)*: catálogos configurables, creación con código automático (primera revisión Rev.00 en Borrador), listado y detalle básicos, copia de roles del usuario.
-- **2B – Borradores, archivos y flujo** *(entregado, pendiente de validación del usuario)*: carga de archivos (7.5), plantillas de flujo por tipo (7.2), asignación de personas, decisiones, rechazos, reasignación y cancelación del flujo.
-- **2C – Publicación y ciclo de vida**: publicación, revisión mayor y menor, vigencia diferida, obsolescencia automática y retiro (7.1, 7.3). La transición diferida necesita un job; su lógica se construye aquí y el job que la dispara en la Fase 4.
+- **2B – Borradores, archivos y flujo** *(entregado y validado)*: carga de archivos (7.5), plantillas de flujo por tipo (7.2), asignación de personas, decisiones, rechazos, reasignación y cancelación del flujo.
+- **2C – Publicación y ciclo de vida** *(entregado, pendiente de validación del usuario)*: publicación, revisión mayor y menor, vigencia diferida, obsolescencia automática y retiro (7.1, 7.3). La lógica de la activación diferida está aquí; ver la nota sobre su proceso de fondo en las decisiones del tramo.
 
 **Decisiones de diseño de la Fase 2:**
 - **Asignación de pasos a personas concretas:** al iniciar sesión se guarda en `Usuario` una **copia informativa** de sus roles y áreas (`RolesUltimoAcceso`, `AreasUltimoAcceso`). Con ella el autor elige candidatos al armar el flujo. Limitaciones: solo aparecen quienes ya entraron al menos una vez, y la copia puede estar desactualizada hasta 10 minutos. **Nunca se usa para autorizar:** la autorización siempre sale de los grupos de AD vigentes, y el servicio debe volver a validar que la persona asignada tenga el rol al decidir.
@@ -246,6 +247,19 @@ Cada fase debe terminar con: código compilando, pruebas pasando, resumen de lo 
 - **Concurrencia:** `RowVersion` en la revisión (una edición y un cambio de flujo simultáneos no se pisan) e índice único filtrado `UX_Flujo_UnicoEnCurso` (un solo flujo en curso por revisión).
 - **Visibilidad:** quien tiene (o tuvo) una etapa asignada en un documento puede ver el documento, su flujo y su PDF aunque no sea gestor.
 - **Pendiente de producción:** definir la ruta real del almacén (`Archivos:RutaBase`, local o de red) y sus permisos y respaldo; hoy, vacía, usa `App_Data/archivos` junto a la aplicación.
+
+**Decisiones del tramo 2C:**
+- **Publicación automática:** al aprobar la **última** etapa del flujo la revisión pasa a *Vigente* en el acto y la anterior a *Obsoleto*, en una misma transacción. Esa transición tiene una sola puerta (`Publicacion.PublicarAsync`) y la garantiza además el índice único «una sola vigente por documento». Como el índice no tolera dos vigentes ni a mitad de una sentencia, el guardado se hace en dos pasos dentro de la transacción (primero se libera la anterior).
+- **Vigencia diferida:** quien da la última aprobación puede indicar una fecha (máximo 365 días). Con fecha futura la revisión queda *Aprobado*, la vigente sigue en uso y, al llegar la fecha, se publica con la fecha **programada** (no la hora real en que corrió el proceso). Sin fecha, o con una ya pasada, es inmediata. La fecha se ignora en etapas intermedias y al rechazar.
+- **Próxima revisión periódica:** al hacerse *Vigente* se calcula como la vigencia + los meses del tipo (`MesesRevision`). El aviso y la gestión de vencimientos son de la Fase 4.
+- **Activación diferida:** la lógica es `IPublicacionService.ActivarPendientesAsync` (idempotente; cada revisión en su transacción, un fallo no afecta a las demás). Se dispara con un proceso de fondo mínimo, `ActivadorDeVigencias`, configurable con `Publicacion:MinutosEntreRevisiones` (5 por defecto; 0 lo desactiva). **Se adelantó desde la Fase 4** porque sin él la vigencia diferida no funcionaría de punta a punta; el resto de trabajos programados (vencimientos, alertas, correo) siguen en la Fase 4.
+- **Numeración:** `Rev.00` es la primera emisión. Una **mayor** suma 1 y reinicia la menor (Rev.03 → Rev.04); una **menor** suma 1 a la menor (Rev.03 → Rev.03.1 → Rev.03.2). Un **borrador cancelado no consume número**: el índice único (documento, mayor, menor) excluye las revisiones *Cancelado*, de modo que el siguiente borrador puede volver a ser Rev.01.
+- **Una sola revisión abierta** por documento: no se puede abrir otra mientras haya un borrador, un flujo en curso o una revisión aprobada pendiente de entrar en vigor. Se abre siempre a partir de la vigente; los archivos no se heredan (se sube el PDF nuevo).
+- **Revisión menor:** exige declarar que *no altera requisitos, pasos ni responsabilidades* (queda en la bitácora). Se aprueba en **una sola etapa** y **no usa la plantilla del tipo**. El aprobador es el **dueño del área**, una figura nueva: el Administrador designa por área a una persona con rol Aprobador (`Area.DuenoId`). Sin dueño no se pueden abrir ni enviar menores. El dueño no puede aprobar una menor que él mismo elaboró (separación de funciones) y debe seguir teniendo el rol Aprobador.
+- **Descartar borradores:** un borrador posterior a la primera emisión se descarta quedando *Cancelado* (la primera emisión se cancela con «Cancelar este documento», que retira el código).
+- **Retiro:** solo el **Administrador**, con motivo obligatorio y bitácora (decisión de la v1; no hay flujo de solicitud y aprobación). La revisión vigente pasa a *Obsoleto* y todo lo abierto (borradores, flujos en curso, revisión aprobada pendiente) se cancela, sin dejar tareas pendientes huérfanas. El código no se reutiliza.
+- **Obsoletos:** conservan sus archivos intactos (se sigue verificando el hash) y solo los consultan gestores; descargar una obsoleta queda en la bitácora. La lista maestra y el banner de obsoleto para lectura son de la Fase 3.
+- **Pendiente:** la extracción del texto del PDF al publicar (para la búsqueda de texto completo, 7.7) se hará en la Fase 3, junto con la búsqueda.
 
 ### Fase 3 – Consulta
 - Lista maestra (filtros, exportación a Excel/CSV).
@@ -313,6 +327,7 @@ Pendientes de datos reales (no bloquean la Fase 1, bloquean la puesta en producc
 | 1.2 | 2026-11-05 | Fase 1 construida. Nombres de proyectos alineados con el código (sección 4). Se documenta el modo de autenticación de desarrollo y la verificación pendiente de Windows Auth (sección 10). |
 | 1.3 | 2026-11-05 | Tramo 2A construido (catálogos y creación de documentos). Se documentan los tramos de la Fase 2 y sus decisiones de diseño. |
 | 1.4 | 2026-11-05 | Tramo 2B construido (archivos, plantillas de flujo, decisiones). Nuevo estado de revisión *Cancelado*. Decisiones del tramo documentadas. |
+| 1.5 | 2026-11-05 | Tramo 2C construido (publicación automática, vigencia diferida, revisiones mayor/menor, dueño de área, descarte de borradores, retiro). Se adelanta un proceso de fondo mínimo para la activación diferida. |
 
 ## 14. Referencias
 

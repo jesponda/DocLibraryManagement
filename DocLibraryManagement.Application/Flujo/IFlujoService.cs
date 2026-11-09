@@ -41,8 +41,21 @@ public sealed record TareaPendienteDto(
     string NombrePaso,
     DateTime DesdeUtc);
 
+/// <summary>Cómo se enviará una revisión: etapas a asignar, o la aprobación fija del dueño del área si es menor.</summary>
+public sealed record PlanEnvioDto(
+    bool EsMenor,
+    IReadOnlyList<PasoPlantillaDto> Pasos,
+    Guid? DuenoId,
+    string? NombreDueno);
+
 public interface IFlujoService
 {
+    /// <summary>
+    /// Etapas con las que se enviaría esta revisión. Una mayor usa la plantilla del tipo; una menor
+    /// usa una sola aprobación, asignada automáticamente al dueño del área.
+    /// </summary>
+    Task<PlanEnvioDto> ObtenerPlanEnvioAsync(int revisionId, CancellationToken ct = default);
+
     Task<IReadOnlyList<PasoPlantillaDto>> ObtenerPlantillaAsync(int tipoDocumentoId, CancellationToken ct = default);
 
     /// <summary>Reemplaza la plantilla del tipo. Solo Administrador. No afecta a flujos ya iniciados.</summary>
@@ -63,7 +76,12 @@ public interface IFlujoService
     /// <summary>Etapas que esperan la decisión del actor ahora mismo.</summary>
     Task<IReadOnlyList<TareaPendienteDto>> MisTareasAsync(Actor actor, CancellationToken ct = default);
 
-    Task DecidirAsync(Actor actor, int pasoId, bool aprobar, string? comentario, CancellationToken ct = default);
+    /// <summary>
+    /// Al aprobar la ÚLTIMA etapa la revisión se publica sola: pasa a Vigente y la anterior a Obsoleta.
+    /// <paramref name="vigenciaUtc"/> permite programar una entrada en vigor futura; si se omite (o ya pasó)
+    /// es inmediata. Se ignora en etapas intermedias y al rechazar.
+    /// </summary>
+    Task DecidirAsync(Actor actor, int pasoId, bool aprobar, string? comentario, DateTime? vigenciaUtc = null, CancellationToken ct = default);
 
     Task ReasignarAsync(Actor actor, int pasoId, Guid nuevoUsuarioId, string motivo, CancellationToken ct = default);
 

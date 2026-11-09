@@ -35,6 +35,10 @@ public static class DependencyInjection
         services.AddScoped<IDocumentoService, DocumentoService>();
         services.AddScoped<IRevisionService, RevisionService>();
         services.AddScoped<IFlujoService, FlujoService>();
+        services.AddScoped<IPublicacionService, PublicacionService>();
+
+        services.Configure<PublicacionOptions>(configuration.GetSection(PublicacionOptions.Seccion));
+        services.AddHostedService<ActivadorDeVigencias>();
 
         return services;
     }
