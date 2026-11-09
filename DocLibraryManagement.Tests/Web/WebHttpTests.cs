@@ -233,6 +233,65 @@ public class WebHttpTests(AplicacionWebFixture app) : IClassFixture<AplicacionWe
         Assert.Contains("Gestionar", t);
     }
 
+    // ---------- Aprobación pendiente de entrar en vigor ----------
+
+    [Fact]
+    public async Task El_Administrador_ve_como_cambiar_la_fecha_o_anular_una_aprobacion_pendiente()
+    {
+        var (estado, _, t) = await PedirAsync("admin", $"/documentos/{app.DocumentoProgramadoId}");
+
+        Assert.Equal(HttpStatusCode.OK, estado);
+        Assert.Contains("Entrada en vigor pendiente", t);
+        Assert.Contains("Cambiar fecha", t);
+        Assert.Contains("Anular la aprobación y devolver a borrador", t);
+        Assert.Contains("Entrará en vigor", t);
+    }
+
+    [Theory]
+    [InlineData("autor-cal")]
+    [InlineData("auditor")]
+    [InlineData("aprobador")]
+    public async Task Nadie_mas_que_el_Administrador_ve_esas_acciones(string persona)
+    {
+        var (estado, _, t) = await PedirAsync(persona, $"/documentos/{app.DocumentoProgramadoId}");
+
+        Assert.Equal(HttpStatusCode.OK, estado);
+        Assert.Contains("Entrará en vigor", t);                        // sí ven que está programada
+        Assert.DoesNotContain("Entrada en vigor pendiente", t);          // pero no pueden intervenirla
+        Assert.DoesNotContain("Anular la aprobación", t);
+    }
+
+    [Fact]
+    public async Task Esas_acciones_no_aparecen_en_una_revision_vigente_ni_en_una_en_flujo()
+    {
+        var (_, _, vigente) = await PedirAsync("admin", $"/documentos/{app.DocumentoPublicadoId}");
+        var (_, _, enFlujo) = await PedirAsync("admin", $"/documentos/{app.DocumentoId}");
+
+        Assert.DoesNotContain("Anular la aprobación", vigente);
+        Assert.DoesNotContain("Anular la aprobación", enFlujo);
+    }
+
+    [Fact]
+    public async Task Una_revision_aprobada_pero_programada_no_es_visible_para_un_lector()
+    {
+        var (_, _, lista, _) = (await PedirConsultaAsync("lector", "/lista-maestra"));
+        var (_, _, buscar, _) = (await PedirConsultaAsync("lector", "/buscar?q=programado"));
+        var (_, _, visor, _) = (await PedirConsultaAsync("lector", $"/doc/{app.CodigoProgramado}"));
+
+        Assert.DoesNotContain(app.CodigoProgramado, lista);
+        Assert.Contains("No se encontró ningún documento", buscar);
+        Assert.Contains("Documento no disponible", visor);
+        Assert.DoesNotContain(AplicacionWebFixture.TituloProgramado, lista + buscar + visor);
+    }
+
+    private async Task<(HttpStatusCode Estado, string Html, string Texto, string? Ubicacion)> PedirConsultaAsync(string persona, string ruta)
+    {
+        using var cliente = await app.ClienteComoAsync(persona);
+        using var r = await cliente.GetAsync(ruta);
+        var html = await r.Content.ReadAsStringAsync();
+        return (r.StatusCode, html, Texto(html), r.Headers.Location?.ToString());
+    }
+
     // ---------- Descarga de archivos ----------
 
     [Fact]

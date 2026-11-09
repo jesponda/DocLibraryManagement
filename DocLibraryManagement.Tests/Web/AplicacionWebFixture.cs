@@ -64,6 +64,15 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
 
     public int AreaId { get; private set; }
 
+    public const string TituloProgramado = "Procedimiento programado";
+
+    /// <summary>Primera emisión aprobada con vigencia a 30 días: estado Aprobado, todavía no vigente.</summary>
+    public int DocumentoProgramadoId { get; private set; }
+
+    public int RevisionProgramadaId { get; private set; }
+
+    public string CodigoProgramado { get; private set; } = "";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -144,11 +153,11 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
             return (await flujo.HistorialAsync(autor, revId)).First().Pasos;
         }
 
-        async Task AprobarTodoAsync(int revId)
+        async Task AprobarTodoAsync(int revId, DateTime? vigencia = null)
         {
             var pasos = (await flujo.HistorialAsync(autor, revId)).First().Pasos;
             await flujo.DecidirAsync(revisor, pasos[0].Id, true, null);
-            await flujo.DecidirAsync(aprobador, pasos[1].Id, true, null);
+            await flujo.DecidirAsync(aprobador, pasos[1].Id, true, null, vigencia);
         }
 
         // 1) Un documento en flujo, esperando al revisor.
@@ -187,6 +196,15 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
         await SubirPdfAsync(revAprobacion, GeneradorPdf.Crear("Procedimiento que espera su aprobación final"));
         var pasosAprobacion = await EnviarAsync(revAprobacion);
         await flujo.DecidirAsync(revisor, pasosAprobacion[0].Id, true, null);
+
+        // 4) Una primera emisión ya aprobada pero con vigencia FUTURA: aún no es vigente (no sale en la lista maestra).
+        var programado = await documentos.CrearAsync(autor, new NuevoDocumento(TituloProgramado, areaId, null, tipoId));
+        DocumentoProgramadoId = programado.Id;
+        CodigoProgramado = programado.Codigo;
+        RevisionProgramadaId = programado.Revisiones.Single().Id;
+        await SubirPdfAsync(RevisionProgramadaId, GeneradorPdf.Crear("Procedimiento programado para entrar en vigor más adelante"));
+        await EnviarAsync(RevisionProgramadaId);
+        await AprobarTodoAsync(RevisionProgramadaId, DateTime.UtcNow.AddDays(30));
     }
 
     public new async Task DisposeAsync()

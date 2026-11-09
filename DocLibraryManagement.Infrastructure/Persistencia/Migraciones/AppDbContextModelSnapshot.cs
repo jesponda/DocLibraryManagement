@@ -204,6 +204,10 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.Property<Guid>("IniciadoPorId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("MotivoCierre")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<int>("Numero")
                         .HasColumnType("int");
 

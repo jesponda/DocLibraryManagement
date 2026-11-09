@@ -151,6 +151,7 @@ internal sealed class InstanciaFlujoConfig : IEntityTypeConfiguration<InstanciaF
         b.ToTable("InstanciasFlujo");
         b.HasKey(x => x.Id);
         b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.MotivoCierre).HasMaxLength(1000);
         b.HasOne(x => x.Revision).WithMany().HasForeignKey(x => x.RevisionId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.IniciadoPor).WithMany().HasForeignKey(x => x.IniciadoPorId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.RevisionId, x.Numero }).IsUnique();

@@ -39,11 +39,12 @@ aprobó, cuál es la revisión **vigente**, y garantiza que nadie use una revisi
 | 2A | Catálogos (áreas, subáreas, tipos) y creación de documentos con código automático | Terminada y validada |
 | 2B | Archivos (PDF + fuente), plantillas de flujo, revisión/aprobación, rechazo | Terminada y validada |
 | 2C | Publicación, vigencia diferida, revisiones mayor/menor, dueño de área, retiro | Terminada y validada |
-| 3 | Lista maestra + exportación, búsqueda por contenido, visor y enlace estable | **Construida; validación manual pendiente** |
+| 3 | Lista maestra + exportación, búsqueda por contenido, visor y enlace estable | Terminada y validada |
+| 3+ | Ajuste: el Administrador puede cambiar la fecha o anular una aprobación que aún no entra en vigor | **Construido; validación manual pendiente** |
 | 4 | Vencimientos de la revisión periódica, alertas, correo, reportes | **No iniciada** |
 | 5 | Endurecimiento, guía de operación, script de despliegue | **No iniciada** |
 
-**Verificación automatizada:** 491 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
+**Verificación automatizada:** 525 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
 **No hay pruebas de interfaz en navegador:** los clics dentro de las pantallas (subir con el selector de archivos, elegir
 personas en desplegables, botones) solo se han validado manualmente.
 
@@ -224,7 +225,7 @@ DocLibraryManagement/
 │   │   ├── Bitacora.cs                Registrar(...) y detección de violación de unicidad
 │   │   ├── UsuarioSincronizador.cs    Alta/actualización de usuario al iniciar sesión
 │   │   ├── AppDbContextFactory.cs     Solo para `dotnet ef` (usa DOCLIB_CONNECTION o LocalDB)
-│   │   └── Migraciones/               4 migraciones (Inicial, UsuarioRolesCopia, FlujoYArchivos, PublicacionYDueno)
+│   │   └── Migraciones/               5 migraciones (Inicial, UsuarioRolesCopia, FlujoYArchivos, PublicacionYDueno, MotivoCierreFlujo)
 │   ├── Catalogo/CatalogoService.cs
 │   ├── Documentos/
 │   │   ├── DocumentoService.cs        Creación con consecutivo seguro ante concurrencia (reintento)
@@ -259,7 +260,7 @@ DocLibraryManagement/
 │       ├── Revision/PanelRevision.razor   Panel de una revisión: archivos, envío, flujo, decisión
 │       └── Pages/                     Una página por ruta (ver tabla abajo)
 │
-└── DocLibraryManagement.Tests/        (≈5,900 líneas; 491 pruebas)
+└── DocLibraryManagement.Tests/        (≈6,300 líneas; 525 pruebas)
     ├── Datos/                         BaseDatosFixture, Escenario (servicios reales + reloj simulado), GeneradorPdf
     ├── Seguridad/ · Catalogo/ · Archivos/ · Flujo/ · Documentos/ · Consulta/
     └── Web/                           AplicacionWebFixture, WebHttpTests, WebConsultaTests
@@ -326,6 +327,8 @@ stateDiagram-v2
     EnAprobacion --> Vigente: última aprobación (sin fecha futura)
     EnAprobacion --> Aprobado: última aprobación con fecha futura
     Aprobado --> Vigente: llega la fecha (TareasDeFondo)
+    Aprobado --> Borrador: el Administrador anula la aprobación
+    Aprobado --> Aprobado: el Administrador cambia la fecha
     Vigente --> Obsoleto: otra revisión se publica / retiro
     Borrador --> Cancelado: descartar borrador
     Aprobado --> Cancelado: retiro del documento
@@ -349,6 +352,7 @@ stateDiagram-v2
 | Ediciones simultáneas no se pisan | Revisión | `RowVersion` (`rowversion`) → `DbUpdateConcurrencyException` → mensaje de negocio |
 | Revisión menor: una sola etapa, la aprueba el dueño del área | `FlujoService` | No usa la plantilla del tipo; exige declarar que no altera requisitos |
 | Retiro de un documento: solo Administrador | `RevisionService.RetirarDocumentoAsync` | Cierra también flujos y borradores abiertos |
+| Una revisión aprobada con vigencia futura se puede **reprogramar** o **devolver a borrador**, solo por el Administrador y con motivo | `RevisionService.ReprogramarVigenciaAsync` / `RevocarAprobacionAsync` | Solo aplica en estado `Aprobado` (aún no vigente); **lo ya vigente no se revierte**. El envío anulado queda como `Revocado` en el historial y el autor debe reenviar por el flujo completo |
 | Vigencia diferida: máx. 365 días; la fecha se respeta al activarse | `ReglasRevision` / `PublicacionService` | Se publica con la fecha **programada**, no la hora real del proceso |
 
 ### 5.5 Flujo de aprobación
@@ -359,7 +363,9 @@ stateDiagram-v2
    por etapa**. Los candidatos salen de una **copia informativa** de roles que se guarda al iniciar sesión → solo aparecen
    quienes ya han entrado al sistema.
 3. Las etapas son **secuenciales**. Un rechazo exige comentario, devuelve la revisión a `Borrador` y marca las etapas
-   restantes como `Omitido`; el reenvío abre una **instancia nueva** (el historial se conserva).
+   restantes como `Omitido`; el reenvío abre una **instancia nueva** (el historial se conserva). Un envío puede cerrar como
+   `Aprobado`, `Rechazado`, `Cancelado` (el autor lo retiró) o `Revocado` (el Administrador anuló su aprobación antes de que
+   entrara en vigor; las decisiones de sus etapas se conservan y `MotivoCierre` guarda el porqué).
 4. Al aprobar la **última** etapa la revisión se **publica sola** (el aprobador final puede indicar una fecha futura).
 
 ### 5.6 Consulta y búsqueda
@@ -397,7 +403,7 @@ El usuario se identifica por `DOMINIO\usuario` y se **sincroniza en la tabla `Us
 | Autor | Lo anterior + crear/editar borradores **de sus áreas** y enviarlos a revisión |
 | Revisor / Aprobador | Decidir las etapas que se le asignaron |
 | Auditor | Solo lectura de todos los documentos y revisiones (incluidas obsoletas y retiradas). **No existe pantalla de bitácora** (ver [§10](#10-consideraciones-de-diseño-actuales-y-limitaciones)) |
-| Administrador | Catálogos, flujos, dueños de área, retiro; edita en cualquier área |
+| Administrador | Catálogos, flujos, dueños de área, retiro; cambia la fecha o anula aprobaciones aún no vigentes; edita en cualquier área |
 
 **Los roles y áreas NO se guardan en la BD como fuente de verdad: se calculan de los grupos de AD.** La sección
 `Autorizacion:Grupos` mapea cada grupo a un rol (y, para Autor, a los códigos de área que habilita). El resultado se cachea

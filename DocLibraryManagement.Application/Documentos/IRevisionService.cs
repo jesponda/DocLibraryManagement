@@ -23,6 +23,7 @@ public sealed record RevisionDetalleDto(
     DateTime FechaCreacionUtc,
     DateTime? FechaAprobacionUtc,
     string? ComentarioUltimoRechazo,
+    bool DevueltaPorRevocacion,
     bool EsPrimeraEmision,
     int TipoDocumentoId,
     int Mayor,
@@ -77,6 +78,19 @@ public interface IRevisionService
     /// La revisión queda Cancelada y su número vuelve a quedar disponible.
     /// </summary>
     Task CancelarBorradorAsync(Actor actor, int revisionId, string motivo, CancellationToken ct = default);
+
+    /// <summary>
+    /// Cambia la fecha de entrada en vigor de una revisión APROBADA que todavía no entra en vigor. Solo el
+    /// Administrador, con motivo. La fecha debe ser futura y de hasta 365 días; la aprobación se conserva.
+    /// </summary>
+    Task ReprogramarVigenciaAsync(Actor actor, int revisionId, DateTime nuevaVigenciaUtc, string motivo, CancellationToken ct = default);
+
+    /// <summary>
+    /// Anula la aprobación de una revisión APROBADA que todavía no entra en vigor y la devuelve a Borrador para
+    /// corregirla. Solo el Administrador, con motivo. El autor debe reenviarla (flujo completo, envío nuevo); la
+    /// vigente actual no se afecta. El flujo anterior queda en el historial como <c>Revocado</c>.
+    /// </summary>
+    Task RevocarAprobacionAsync(Actor actor, int revisionId, string motivo, CancellationToken ct = default);
 
     /// <summary>
     /// Baja de un documento sin sucesor. Solo el Administrador. La revisión vigente pasa a Obsoleta y

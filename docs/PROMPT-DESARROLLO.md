@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Versión del documento | 1.6 |
+| Versión del documento | 1.7 |
 | Fecha | 2026-11-05 |
 | Estado | Aprobado para iniciar Fase 1 |
 | Norma base | ISO 9001:2015 cláusula 7.5 (Información documentada), estructura Annex SL |
@@ -133,7 +133,7 @@ Documento: Retirado (baja sin sucesor)
 
 - **Borrador:** editable por el Autor del área. Puede cancelarse (se descarta sin consumir número de revisión).
 - **En revisión / En aprobación:** siguen los pasos de la plantilla de flujo. Un rechazo devuelve a Borrador con comentarios obligatorios.
-- **Aprobado:** flujo completo, **con fecha de vigencia futura**: espera a que llegue. Sin fecha futura la revisión no se detiene aquí: pasa a Vigente en el acto al dar la última aprobación.
+- **Aprobado:** flujo completo, **con fecha de vigencia futura**: espera a que llegue. Sin fecha futura la revisión no se detiene aquí: pasa a Vigente en el acto al dar la última aprobación. Mientras espera, **el Administrador puede cambiar la fecha o anular la aprobación y devolverla a Borrador** (ver «Ajustes tras la validación»).
 - **Cancelado:** borrador descartado antes de emitirse. No cuenta como revisión abierta ni consume número de revisión.
 - **Vigente:** única revisión visible como vigente para lectura general.
 - **Obsoleto:** reemplazada por una posterior.
@@ -260,7 +260,7 @@ Cada fase debe terminar con: código compilando, pruebas pasando, resumen de lo 
 - **Retiro:** solo el **Administrador**, con motivo obligatorio y bitácora (decisión de la v1; no hay flujo de solicitud y aprobación). La revisión vigente pasa a *Obsoleto* y todo lo abierto (borradores, flujos en curso, revisión aprobada pendiente) se cancela, sin dejar tareas pendientes huérfanas. El código no se reutiliza.
 - **Obsoletos:** conservan sus archivos intactos (se sigue verificando el hash) y solo los consultan gestores; descargar una obsoleta queda en la bitácora. La lista maestra y el banner de obsoleto para lectura se hicieron en la Fase 3.
 
-### Fase 3 – Consulta *(entregada, pendiente de validación del usuario)*
+### Fase 3 – Consulta *(entregada y validada)*
 - Lista maestra (filtros, exportación a Excel/CSV).
 - Visor del PDF vigente, enlace estable `/doc/{codigo}`, vista de obsoletos con banner.
 - Búsqueda de texto completo (7.7).
@@ -275,6 +275,26 @@ Cada fase debe terminar con: código compilando, pruebas pasando, resumen de lo 
 - **Búsqueda (`/buscar`):** por defecto solo revisiones vigentes de documentos activos. **Incluir obsoletas** (consulta de auditoría) solo lo pueden pedir Administrador y Auditor; el servicio lo exige aunque la URL lo pida. Resultados paginados (20) con fragmento resaltado; el resaltado se devuelve como segmentos de texto, nunca como HTML, así que el contenido del PDF no puede inyectar marcado.
 - **Visor y enlace estable:** `/doc/{codigo}` lleva siempre a la revisión vigente (el código no distingue mayúsculas) con el PDF incrustado. `/doc/{codigo}/{etiqueta}` (p. ej. `Rev.00`) muestra una revisión concreta: una obsoleta solo la ven Administrador, Auditor y Autores del área, con un banner rojo **OBSOLETO – No debe usarse** y enlace a la vigente. Un documento inexistente, no publicado o retirado muestra **el mismo mensaje genérico** a un lector, sin revelar su existencia ni su título.
 - **No incluido (pendiente):** los **vencimientos y alertas** de la revisión periódica siguen en la Fase 4; el **texto de los PDF no se vuelve a leer** si cambia el motor de extracción (habría que invalidar `TextoExtraido`).
+
+**Ajustes tras la validación (2026-11-09) — aprobación pendiente de entrar en vigor:**
+Hallazgo del usuario: una revisión aprobada con vigencia futura (estado *Aprobado*) no tenía salida salvo esperar la fecha o
+retirar el documento completo. Se agregó, **solo para el Administrador y con motivo obligatorio y bitácora**:
+- **Cambiar la fecha de vigencia** (`ReprogramarVigenciaAsync`): la nueva fecha debe ser **futura** y de hasta 365 días; la aprobación se
+  conserva y la revisión se publicará con la fecha nueva. Una fecha pasada o actual se rechaza (equivaldría a «publicar ya», que **no** se
+  incluyó por decisión).
+- **Devolver a borrador** (`RevocarAprobacionAsync`): anula la aprobación y la revisión vuelve a *Borrador*; el autor corrige y debe
+  **reenviarla por el flujo completo** (envío nuevo). El envío anulado queda en el historial con el nuevo estado de flujo **`Revocado`**
+  (sus etapas conservan su decisión) y `InstanciaFlujo.MotivoCierre` guarda el motivo, que el autor ve en el panel. La vigente actual
+  nunca se afecta. Al anular desaparecen las fechas de aprobación y vigencia.
+- **Alcance:** solo revisiones en estado *Aprobado* (aún no vigentes). **No se permite revertir una revisión que ya es vigente** (volver a
+  poner la anterior): reactivar una obsoleta rompe la garantía de 7.5.3 de que lo obsoleto no vuelve a usarse; la salida para lo ya
+  vigente sigue siendo abrir una revisión nueva o retirar el documento. Tampoco se incluyeron «publicar ahora» ni «descartarla».
+- **Carrera con `TareasDeFondo`:** si el proceso publica la revisión antes de que el Administrador actúe, la acción se rechaza con un
+  mensaje claro (la revisión ya está vigente). Mientras el proceso no corra, anular o reprogramar sigue siendo posible aunque la fecha ya
+  haya pasado.
+- **Cambio relacionado:** el motivo por el que una revisión volvió a *Borrador* se calcula ahora **solo del último envío** (antes se
+  tomaba cualquier rechazo anterior, y podía mostrarse un motivo viejo que ya no aplicaba).
+- Migración `MotivoCierreFlujo` (una columna nula).
 
 ### Fase 4 – Alertas y reportes
 - Jobs de vigencia diferida y vencimientos (7.4), escalamiento.
@@ -338,6 +358,7 @@ Pendientes de datos reales (no bloquean la Fase 1, bloquean la puesta en producc
 | 1.4 | 2026-11-05 | Tramo 2B construido (archivos, plantillas de flujo, decisiones). Nuevo estado de revisión *Cancelado*. Decisiones del tramo documentadas. |
 | 1.5 | 2026-11-05 | Tramo 2C construido (publicación automática, vigencia diferida, revisiones mayor/menor, dueño de área, descarte de borradores, retiro). Se adelanta un proceso de fondo mínimo para la activación diferida. |
 | 1.6 | 2026-11-09 | Fase 3 construida (lista maestra con exportación, búsqueda por contenido, visor y enlace estable). La búsqueda no usa SQL Server Full-Text porque el LocalDB de desarrollo no lo incluye. `ActivadorDeVigencias` pasa a `TareasDeFondo`. |
+| 1.7 | 2026-11-09 | Fase 3 validada. Ajuste: el Administrador puede cambiar la fecha o anular (devolver a borrador) una aprobación que aún no entra en vigor. Nuevo estado de flujo `Revocado`. |
 
 ## 14. Referencias
 

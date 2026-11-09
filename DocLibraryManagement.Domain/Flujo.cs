@@ -12,6 +12,12 @@ public enum EstadoFlujo
     Aprobado = 2,
     Rechazado = 3,
     Cancelado = 4,
+
+    /// <summary>
+    /// El flujo había terminado aprobado, pero un Administrador anuló esa aprobación antes de que la revisión
+    /// entrara en vigor. Las etapas conservan su decisión (historial); la revisión vuelve a Borrador.
+    /// </summary>
+    Revocado = 5,
 }
 
 public enum EstadoPaso
@@ -71,6 +77,9 @@ public class InstanciaFlujo
     public DateTime FechaInicioUtc { get; set; }
 
     public DateTime? FechaFinUtc { get; set; }
+
+    /// <summary>Por qué se cerró el flujo cuando no fue por decisión de una etapa (hoy: aprobación revocada).</summary>
+    public string? MotivoCierre { get; set; }
 
     public Guid IniciadoPorId { get; set; }
 

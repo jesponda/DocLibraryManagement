@@ -35,16 +35,34 @@ internal sealed class RevisionService(
             throw new AccesoDenegadoException("No tienes permiso para ver esta revisión.");
         }
 
-        string? rechazo = null;
+        string? devolucion = null;
+        var revocada = false;
         if (r.Estado == EstadoRevision.Borrador)
         {
-            // Se muestra por qué volvió a borrador, para que el autor sepa qué corregir.
-            var paso = await db.PasosInstancia.AsNoTracking()
-                .Where(p => p.Instancia!.RevisionId == revisionId && p.Estado == EstadoPaso.Rechazado)
-                .OrderByDescending(p => p.Instancia!.Numero)
-                .Select(p => new { Quien = p.DecididoPor!.NombreVisible, p.Comentario })
+            // Por qué volvió a borrador, para que el autor sepa qué corregir. Se mira SOLO el último envío: un rechazo
+            // viejo no debe aparecer si después se reenvió y se canceló, porque sería un motivo que ya no aplica.
+            var ultimo = await db.InstanciasFlujo.AsNoTracking()
+                .Where(i => i.RevisionId == revisionId)
+                .OrderByDescending(i => i.Numero)
+                .Select(i => new
+                {
+                    i.Estado,
+                    i.MotivoCierre,
+                    Rechazo = i.Pasos.Where(p => p.Estado == EstadoPaso.Rechazado)
+                        .Select(p => new { Quien = p.DecididoPor!.NombreVisible, p.Comentario })
+                        .FirstOrDefault(),
+                })
                 .FirstOrDefaultAsync(ct);
-            rechazo = paso is null ? null : $"{paso.Quien}: {paso.Comentario}";
+
+            if (ultimo is { Estado: EstadoFlujo.Rechazado, Rechazo: { } rechazo })
+            {
+                devolucion = $"{rechazo.Quien}: {rechazo.Comentario}";
+            }
+            else if (ultimo is { Estado: EstadoFlujo.Revocado })
+            {
+                devolucion = ultimo.MotivoCierre;
+                revocada = true;
+            }
         }
 
         var totalRevisiones = await db.Revisiones.CountAsync(x => x.DocumentoId == r.DocumentoId, ct);
@@ -55,7 +73,7 @@ internal sealed class RevisionService(
             r.RutaArchivoPdf is not null, r.HashArchivoPdf,
             r.RutaArchivoFuente is not null, r.HashArchivoFuente,
             r.AutorId, r.Autor!.NombreVisible, r.FechaCreacionUtc, r.FechaAprobacionUtc,
-            rechazo, EsPrimeraEmision: totalRevisiones == 1 && r.Mayor == 0 && r.Menor == 0,
+            devolucion, revocada, EsPrimeraEmision: totalRevisiones == 1 && r.Mayor == 0 && r.Menor == 0,
             r.Documento.TipoDocumentoId, r.Mayor, r.Menor, r.FechaVigenciaUtc, r.FechaProximaRevisionUtc);
     }
 
@@ -344,6 +362,89 @@ internal sealed class RevisionService(
             anterior: $"{r.Etiqueta} Borrador", nuevo: $"{r.Etiqueta} Cancelado", comentario: texto);
 
         await GuardarAsync(db, ct);
+    }
+
+    // ---------- Revisión aprobada que aún no entra en vigor ----------
+
+    public async Task ReprogramarVigenciaAsync(Actor actor, int revisionId, DateTime nuevaVigenciaUtc, string motivo, CancellationToken ct = default)
+    {
+        ExigirAdministrador(actor, "cambiar la fecha de vigencia");
+        var texto = NormalizarMotivo(motivo, "Indica el motivo del cambio de fecha.");
+
+        // Reutiliza la regla de vigencia: una fecha que ya pasó significaría «publicar ya», y eso aquí NO se permite.
+        var ahora = reloj.GetUtcNow().UtcDateTime;
+        var (vigencia, inmediata) = ReglasRevision.ResolverVigencia(ahora, nuevaVigenciaUtc);
+        if (inmediata)
+        {
+            throw new ReglaNegocioException("La nueva fecha debe ser posterior a este momento.");
+        }
+
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var r = await CargarAsync(db, revisionId, ct);
+        ExigirAprobadaPendiente(r);
+
+        var anterior = r.FechaVigenciaUtc;
+        r.FechaVigenciaUtc = vigencia;
+        Bitacora.Registrar(db, reloj, actor, "Revision.ReprogramarVigencia", nameof(Documento), r.Documento!.Codigo,
+            anterior: $"{r.Etiqueta} entraba en vigor el {anterior:yyyy-MM-dd HH:mm} UTC",
+            nuevo: $"{r.Etiqueta} entrará en vigor el {vigencia:yyyy-MM-dd HH:mm} UTC", comentario: texto);
+
+        await GuardarAsync(db, ct);
+    }
+
+    public async Task RevocarAprobacionAsync(Actor actor, int revisionId, string motivo, CancellationToken ct = default)
+    {
+        ExigirAdministrador(actor, "anular una aprobación");
+        var texto = NormalizarMotivo(motivo, "Indica el motivo por el que se anula la aprobación.");
+
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var r = await CargarAsync(db, revisionId, ct);
+        ExigirAprobadaPendiente(r);
+
+        // El envío que terminó aprobado queda en el historial como «Revocado»: las decisiones de sus etapas se conservan.
+        var flujo = await db.InstanciasFlujo
+            .Where(i => i.RevisionId == revisionId && i.Estado == EstadoFlujo.Aprobado)
+            .OrderByDescending(i => i.Numero)
+            .FirstOrDefaultAsync(ct)
+            ?? throw new ReglaNegocioException("La revisión no tiene un flujo aprobado que anular.");
+
+        var programada = r.FechaVigenciaUtc;
+        flujo.Estado = EstadoFlujo.Revocado;
+        flujo.MotivoCierre = texto;
+
+        r.Estado = EstadoRevision.Borrador;
+        r.FechaAprobacionUtc = null;
+        r.FechaVigenciaUtc = null;
+
+        Bitacora.Registrar(db, reloj, actor, "Revision.RevocarAprobacion", nameof(Documento), r.Documento!.Codigo,
+            anterior: $"{r.Etiqueta} Aprobado (entraba en vigor el {programada:yyyy-MM-dd HH:mm} UTC)",
+            nuevo: $"{r.Etiqueta} Borrador; envío #{flujo.Numero} revocado", comentario: texto);
+
+        await GuardarAsync(db, ct);
+    }
+
+    private static void ExigirAdministrador(Actor actor, string accion)
+    {
+        if (!actor.EsAdministrador)
+        {
+            throw new AccesoDenegadoException($"Solo un Administrador puede {accion}.");
+        }
+    }
+
+    /// <summary>Solo se interviene una revisión que ya fue aprobada pero todavía no está en vigor.</summary>
+    private static void ExigirAprobadaPendiente(RevisionDocumento r)
+    {
+        if (r.Estado != EstadoRevision.Aprobado)
+        {
+            throw new ReglaNegocioException(
+                "Solo se puede hacer esto con una revisión aprobada que todavía no entra en vigor. "
+                + $"La {r.Etiqueta} está en estado {r.Estado}.");
+        }
+
+        if (r.Documento!.Estado != EstadoDocumento.Activo)
+        {
+            throw new ReglaNegocioException("El documento está retirado.");
+        }
     }
 
     public async Task RetirarDocumentoAsync(Actor actor, int documentoId, string motivo, CancellationToken ct = default)

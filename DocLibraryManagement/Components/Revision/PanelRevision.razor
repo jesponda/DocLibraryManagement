@@ -36,7 +36,17 @@ else
             @if (!string.IsNullOrEmpty(rev.ComentarioUltimoRechazo))
             {
                 <div class="alert alert-warning">
-                    <strong>Esta revisión fue rechazada.</strong> Corrige lo indicado y vuelve a enviarla.<br />
+                    @if (rev.DevueltaPorRevocacion)
+                    {
+                        <strong>Un Administrador anuló la aprobación de esta revisión.</strong>
+                        <span>Corrígela según el motivo y vuelve a enviarla: pasará de nuevo por todo el flujo.</span>
+                    }
+                    else
+                    {
+                        <strong>Esta revisión fue rechazada.</strong>
+                        <span>Corrige lo indicado y vuelve a enviarla.</span>
+                    }
+                    <br />
                     @rev.ComentarioUltimoRechazo
                 </div>
             }
@@ -159,6 +169,45 @@ else
                 <input id="motivoCancelacion" class="form-control mb-2" maxlength="1000" @bind="motivoCancelacion" />
                 <button class="btn btn-danger" @onclick="CancelarDocumentoAsync">Cancelar documento</button>
                 <button class="btn btn-link" @onclick="() => confirmandoCancelacion = false">Volver</button>
+            </div>
+        </div>
+    }
+
+    @if (esAdmin && rev.Estado == EstadoRevision.Aprobado)
+    {
+        <div class="card border-warning mb-3" style="max-width: 56rem">
+            <div class="card-header">Entrada en vigor pendiente (solo Administrador)</div>
+            <div class="card-body">
+                <p>
+                    Esta revisión ya está aprobada y entrará en vigor el
+                    <strong>@(rev.FechaVigenciaUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—")</strong>.
+                    Hasta entonces sigue vigente la revisión anterior. Puedes cambiar la fecha o anular la aprobación.
+                </p>
+
+                <h3 class="h6">Cambiar la fecha</h3>
+                <div class="row g-2 align-items-end mb-3">
+                    <div class="col-sm-4">
+                        <label class="form-label" for="nuevaFecha">Nueva fecha</label>
+                        <input id="nuevaFecha" type="date" class="form-control" min="@DateTime.Today.AddDays(1).ToString("yyyy-MM-dd")"
+                               value="@nuevaFechaTexto" @onchange="e => nuevaFechaTexto = e.Value?.ToString() ?? string.Empty" />
+                    </div>
+                    <div class="col-sm-5">
+                        <label class="form-label" for="motivoFecha">Motivo</label>
+                        <input id="motivoFecha" class="form-control" maxlength="1000" @bind="motivoFecha" />
+                    </div>
+                    <div class="col-sm-3"><button class="btn btn-outline-primary" @onclick="ReprogramarAsync">Cambiar fecha</button></div>
+                </div>
+                <div class="form-text mb-3">Debe ser una fecha futura, de hasta 365 días. La aprobación se conserva.</div>
+
+                <hr />
+                <h3 class="h6">Devolver a borrador</h3>
+                <p class="mb-2">
+                    Anula la aprobación para corregir la revisión. El autor deberá <strong>volver a enviarla</strong> y pasará otra vez por
+                    todo el flujo. La revisión vigente no se afecta.
+                </p>
+                <label class="form-label" for="motivoRevocar">Motivo (lo verá el autor)</label>
+                <input id="motivoRevocar" class="form-control mb-2" maxlength="1000" @bind="motivoRevocar" />
+                <button class="btn btn-danger" @onclick="RevocarAsync">Anular la aprobación y devolver a borrador</button>
             </div>
         </div>
     }
@@ -376,6 +425,11 @@ else
 
     private string vigenciaTexto = "";
 
+    private bool esAdmin;
+    private string nuevaFechaTexto = "";
+    private string motivoFecha = "";
+    private string motivoRevocar = "";
+
     /// <summary>La etapa que decide el usuario es la última del flujo: aprobarla publica la revisión.</summary>
     private bool EsUltimaEtapa =>
         miTarea is not null
@@ -402,6 +456,7 @@ else
             esGestor = a.EsAdministrador || a.TieneRol(RolSistema.Auditor) || a.PuedeEditarEnArea(rev.CodigoArea);
             puedeEditar = rev.Estado == EstadoRevision.Borrador && a.PuedeEditarEnArea(rev.CodigoArea);
             puedeGestionarFlujo = a.PuedeEditarEnArea(rev.CodigoArea);
+            esAdmin = a.EsAdministrador;
 
             motivo = rev.MotivoCambio;
             descripcion = rev.DescripcionCambio ?? "";
@@ -518,13 +573,7 @@ else
 
     private async Task DecidirAsync(bool aprobar)
     {
-        DateTime? vigenciaUtc = null;
-        if (aprobar && EsUltimaEtapa && DateOnly.TryParse(vigenciaTexto, out var fecha))
-        {
-            // El usuario elige un día; entra en vigor a las 00:00 de ese día en la hora local de la planta.
-            var local = DateTime.SpecifyKind(fecha.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
-            vigenciaUtc = TimeZoneInfo.ConvertTimeToUtc(local, TimeZoneInfo.Local);
-        }
+        var vigenciaUtc = aprobar && EsUltimaEtapa ? FechaLocalAUtc(vigenciaTexto) : null;
 
         var etiquetaPublica = aprobar && EsUltimaEtapa;
         if (await EjecutarAsync(a => Flujo.DecidirAsync(a, miTarea!.PasoId, aprobar, comentarioDecision, vigenciaUtc),
@@ -534,6 +583,44 @@ else
         {
             comentarioDecision = "";
             vigenciaTexto = "";
+            await NotificarAsync();
+        }
+    }
+
+    /// <summary>El usuario elige un día; entra en vigor a las 00:00 de ese día en la hora local de la planta.</summary>
+    private static DateTime? FechaLocalAUtc(string? texto)
+    {
+        if (!DateOnly.TryParse(texto, out var fecha))
+        {
+            return null;
+        }
+
+        var local = DateTime.SpecifyKind(fecha.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
+        return TimeZoneInfo.ConvertTimeToUtc(local, TimeZoneInfo.Local);
+    }
+
+    private async Task ReprogramarAsync()
+    {
+        if (FechaLocalAUtc(nuevaFechaTexto) is not { } fecha)
+        {
+            Error = "Elige la nueva fecha de entrada en vigor.";
+            return;
+        }
+
+        if (await EjecutarAsync(a => Revisiones.ReprogramarVigenciaAsync(a, RevisionId, fecha, motivoFecha),
+                "Se cambió la fecha de entrada en vigor."))
+        {
+            nuevaFechaTexto = motivoFecha = "";
+            await NotificarAsync();
+        }
+    }
+
+    private async Task RevocarAsync()
+    {
+        if (await EjecutarAsync(a => Revisiones.RevocarAprobacionAsync(a, RevisionId, motivoRevocar),
+                "Se anuló la aprobación: la revisión volvió a borrador."))
+        {
+            motivoRevocar = "";
             await NotificarAsync();
         }
     }
@@ -611,6 +698,7 @@ else
         EstadoFlujo.Aprobado => "Aprobado",
         EstadoFlujo.Rechazado => "Rechazado",
         EstadoFlujo.Cancelado => "Cancelado",
+        EstadoFlujo.Revocado => "Aprobación anulada",
         _ => e.ToString(),
     };
 
