@@ -12,6 +12,11 @@
 
 <Mensajes Error="@Error" Exito="@Exito" />
 
+@if (!string.IsNullOrEmpty(avisoSubida))
+{
+    <div class="alert alert-warning" role="alert">@avisoSubida</div>
+}
+
 @if (rev is null)
 {
     @if (Error is null)
@@ -427,9 +432,13 @@ else
         }
     }
 
+    private string? avisoSubida;
+
     private async Task SubirAsync(InputFileChangeEventArgs e, TipoArchivo tipo)
     {
         var archivo = e.File;
+        ResultadoSubida? resultado = null;
+        avisoSubida = null;
         var ok = await EjecutarAsync(async a =>
         {
             Stream flujo;
@@ -445,13 +454,14 @@ else
 
             await using (flujo)
             {
-                await Revisiones.SubirArchivoAsync(a, RevisionId, tipo, archivo.Name, flujo);
+                resultado = await Revisiones.SubirArchivoAsync(a, RevisionId, tipo, archivo.Name, flujo);
             }
         }, "Archivo cargado.");
 
         if (ok)
         {
             await NotificarAsync();
+            avisoSubida = resultado?.Aviso; // tras recargar, para que el aviso no se pierda
         }
     }
 

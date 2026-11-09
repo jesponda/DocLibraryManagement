@@ -1,10 +1,12 @@
 using DocLibraryManagement.Application.Archivos;
 using DocLibraryManagement.Application.Catalogo;
+using DocLibraryManagement.Application.Consulta;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Application.Flujo;
 using DocLibraryManagement.Application.Usuarios;
 using DocLibraryManagement.Infrastructure.Archivos;
 using DocLibraryManagement.Infrastructure.Catalogo;
+using DocLibraryManagement.Infrastructure.Consulta;
 using DocLibraryManagement.Infrastructure.Documentos;
 using DocLibraryManagement.Infrastructure.Flujo;
 using DocLibraryManagement.Infrastructure.Persistencia;
@@ -37,8 +39,13 @@ public static class DependencyInjection
         services.AddScoped<IFlujoService, FlujoService>();
         services.AddScoped<IPublicacionService, PublicacionService>();
 
-        services.Configure<PublicacionOptions>(configuration.GetSection(PublicacionOptions.Seccion));
-        services.AddHostedService<ActivadorDeVigencias>();
+        services.AddSingleton<IExtractorTexto, ExtractorTextoPdf>();
+        services.AddSingleton<IExportadorListaMaestra, ExportadorListaMaestra>();
+        services.AddScoped<IConsultaService, ConsultaService>();
+        services.AddScoped<IIndexadorService, IndexadorService>();
+
+        services.Configure<TareasDeFondoOptions>(configuration.GetSection(TareasDeFondoOptions.Seccion));
+        services.AddHostedService<TareasDeFondo>();
 
         return services;
     }

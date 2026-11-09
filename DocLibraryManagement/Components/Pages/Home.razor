@@ -7,10 +7,32 @@
 <AuthorizeView>
     <Authorized>
         <p>Bienvenido, <strong>@context.User.Identity?.Name</strong>.</p>
-        <p>
-            Aquí podrás consultar la lista maestra y el PDF vigente de cada documento controlado.
-            Estas funciones llegarán en las siguientes fases.
-        </p>
-        <p><a href="/mi-acceso">Ver mi acceso</a></p>
+
+        <form method="get" action="buscar" class="mb-4" style="max-width: 40rem">
+            <label class="form-label" for="busqueda">¿Qué documento necesitas?</label>
+            <div class="input-group">
+                <input id="busqueda" name="q" class="form-control" maxlength="200" placeholder="Código, título o una palabra del contenido" />
+                <button type="submit" class="btn btn-primary">Buscar</button>
+            </div>
+        </form>
+
+        <div class="list-group" style="max-width: 40rem">
+            <a class="list-group-item list-group-item-action" href="lista-maestra">
+                <strong>Lista maestra</strong><br />
+                <small class="text-muted">Todos los documentos vigentes, con su revisión y fecha de aprobación.</small>
+            </a>
+            <AuthorizeView Roles="Revisor,Aprobador" Context="tareas">
+                <a class="list-group-item list-group-item-action" href="pendientes">
+                    <strong>Mis tareas</strong><br />
+                    <small class="text-muted">Documentos que esperan tu revisión o aprobación.</small>
+                </a>
+            </AuthorizeView>
+            <AuthorizeView Roles="Autor,Administrador,Auditor" Context="gestion">
+                <a class="list-group-item list-group-item-action" href="documentos">
+                    <strong>Gestión de documentos</strong><br />
+                    <small class="text-muted">Borradores, revisiones en curso y flujos de aprobación.</small>
+                </a>
+            </AuthorizeView>
+        </div>
     </Authorized>
 </AuthorizeView>

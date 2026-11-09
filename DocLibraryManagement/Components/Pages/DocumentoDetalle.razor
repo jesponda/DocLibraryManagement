@@ -68,10 +68,14 @@ else
                 <td>@r.MotivoCambio</td>
                 <td>@r.Autor</td>
                 <td>@r.FechaCreacionUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                <td>
+                <td class="text-nowrap">
                     @if (r.Id != revisionId)
                     {
                         <button class="btn btn-sm btn-outline-secondary" @onclick="() => revisionId = r.Id">Ver</button>
+                    }
+                    @if (r.Estado != EstadoRevision.Cancelado)
+                    {
+                        <a class="btn btn-sm btn-link" href="doc/@doc.Codigo/@r.Etiqueta">Visor</a>
                     }
                 </td>
             </tr>

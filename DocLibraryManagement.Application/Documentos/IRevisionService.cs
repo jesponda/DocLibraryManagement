@@ -34,6 +34,10 @@ public sealed record RevisionDetalleDto(
     public bool EsMenor => Menor > 0;
 }
 
+/// <param name="TieneTextoBuscable">El PDF tiene texto, así que se podrá encontrar por su contenido.</param>
+/// <param name="Aviso">Qué decirle al autor cuando no se podrá buscar por contenido; null si todo está bien o es una fuente.</param>
+public sealed record ResultadoSubida(bool TieneTextoBuscable, string? Aviso);
+
 public interface IRevisionService
 {
     /// <summary>
@@ -45,8 +49,11 @@ public interface IRevisionService
     /// <summary>Solo en Borrador y solo quien edita en el área del documento.</summary>
     Task ActualizarBorradorAsync(Actor actor, int revisionId, string motivoCambio, string? descripcionCambio, CancellationToken ct = default);
 
-    /// <summary>Sube (o reemplaza) el PDF o la fuente de un borrador.</summary>
-    Task SubirArchivoAsync(Actor actor, int revisionId, TipoArchivo tipo, string nombreOriginal, Stream contenido, CancellationToken ct = default);
+    /// <summary>
+    /// Sube (o reemplaza) el PDF o la fuente de un borrador. Al subir un PDF se lee su texto para la búsqueda;
+    /// si no tiene (escaneado) o no se pudo leer, la subida sí se acepta pero el resultado trae un aviso.
+    /// </summary>
+    Task<ResultadoSubida> SubirArchivoAsync(Actor actor, int revisionId, TipoArchivo tipo, string nombreOriginal, Stream contenido, CancellationToken ct = default);
 
     /// <summary>Abre un archivo para descargarlo, verificando permisos y la integridad (hash).</summary>
     Task<ArchivoParaDescarga> AbrirArchivoAsync(Actor actor, int revisionId, TipoArchivo tipo, CancellationToken ct = default);

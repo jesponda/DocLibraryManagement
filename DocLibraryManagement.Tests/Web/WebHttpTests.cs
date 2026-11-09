@@ -219,7 +219,7 @@ public class WebHttpTests(AplicacionWebFixture app) : IClassFixture<AplicacionWe
         using var enFlujo = await lector.GetAsync($"/archivos/{app.RevisionId}/pdf");
 
         Assert.Equal(HttpStatusCode.OK, vigente.StatusCode);
-        Assert.Equal(app.ContenidoPdf, await vigente.Content.ReadAsByteArrayAsync());
+        Assert.Equal(app.ContenidoPdfVigente, await vigente.Content.ReadAsByteArrayAsync());
         Assert.Equal(HttpStatusCode.Forbidden, enFlujo.StatusCode);
     }
 

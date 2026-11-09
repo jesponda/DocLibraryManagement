@@ -1,6 +1,7 @@
 using DocLibraryManagement.Application.Archivos;
 using DocLibraryManagement.Application.Catalogo;
 using DocLibraryManagement.Application.Comun;
+using DocLibraryManagement.Application.Consulta;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Application.Flujo;
 using DocLibraryManagement.Application.Usuarios;
@@ -58,6 +59,8 @@ public sealed class Escenario : IDisposable
 
     public IRevisionService Revisiones => _scope.ServiceProvider.GetRequiredService<IRevisionService>();
 
+    public IConsultaService Consulta() => _scope.ServiceProvider.GetRequiredService<IConsultaService>();
+
     public IFlujoService Flujo => _scope.ServiceProvider.GetRequiredService<IFlujoService>();
 
     public string RutaArchivos { get; }
@@ -65,9 +68,11 @@ public sealed class Escenario : IDisposable
     /// <summary>Proveedor del ámbito del escenario, para resolver servicios que no tienen atajo propio.</summary>
     public IServiceProvider Scope() => _scope.ServiceProvider;
 
-    /// <summary>PDF mínimo pero con la firma correcta. Cada llamada puede variar el contenido con <paramref name="marca"/>.</summary>
-    public static byte[] PdfDePrueba(string marca = "base") =>
-        System.Text.Encoding.ASCII.GetBytes($"%PDF-1.4\n% prueba {marca}\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
+    /// <summary>
+    /// PDF válido con texto «Texto de prueba {marca}». Cada marca distinta da contenido (y hash) distinto, y la
+    /// marca es lo que luego se puede buscar.
+    /// </summary>
+    public static byte[] PdfDePrueba(string marca = "base") => GeneradorPdf.Crear($"Texto de prueba {marca}");
 
     public async Task<Guid> IdDeAsync(Actor actor)
     {
@@ -153,6 +158,20 @@ public sealed class Escenario : IDisposable
         await IniciarAsync(f);
         await AprobarRevisionAsync(f, f.RevisionId, vigenciaUtc);
     }
+
+    /// <summary>Crea otro documento en el área del escenario, con el título y el texto de PDF indicados, y lo deja Vigente.</summary>
+    public async Task<(DocumentoDetalleDto Doc, int RevisionId)> PublicarOtroAsync(EscenarioFlujo f, string titulo, string textoPdf)
+    {
+        var doc = await Documentos.CrearAsync(f.Autor, new NuevoDocumento(titulo, f.AreaId, null, f.TipoId));
+        var revisionId = doc.Revisiones.Single().Id;
+        await SubirPdfAsync(f.Autor, revisionId, textoPdf);
+        await Flujo.IniciarAsync(f.Autor, revisionId, [new AsignacionPaso(1, f.RevisorId), new AsignacionPaso(2, f.AprobadorId)]);
+        await AprobarRevisionAsync(f, revisionId);
+        return (doc, revisionId);
+    }
+
+    /// <summary>Palabra única y sin significado, para que la búsqueda de una prueba no choque con las de otras.</summary>
+    public static string PalabraUnica() => "zq" + Guid.NewGuid().ToString("N")[..10];
 
     /// <summary>Estado de todas las revisiones del documento, por etiqueta.</summary>
     public async Task<Dictionary<string, EstadoRevision>> EstadosDelDocumentoAsync(int documentoId)

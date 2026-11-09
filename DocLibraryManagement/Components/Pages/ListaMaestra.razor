@@ -1,0 +1,143 @@
+@page "/lista-maestra"
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Catalogo
+@using DocLibraryManagement.Application.Consulta
+@inject IConsultaService Consulta
+@inject ICatalogoService Catalogo
+
+<PageTitle>Lista maestra</PageTitle>
+
+<h1>Lista maestra</h1>
+<p class="text-muted">Documentos vigentes. Abre el código para ver el PDF vigente.</p>
+
+<Mensajes Error="@Error" />
+
+<form method="get" class="row g-2 mb-3" style="max-width: 62rem">
+    <div class="col-md-4">
+        <label class="form-label" for="texto">Código o título</label>
+        <input id="texto" name="texto" class="form-control" maxlength="200" value="@Texto" />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="area">Área</label>
+        <select id="area" name="area" class="form-select">
+            <option value="">Todas</option>
+            @foreach (var a in areas)
+            {
+                <option value="@a.Id" selected="@(a.Id == Area)">@a.Codigo – @a.Nombre</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="tipo">Tipo</label>
+        <select id="tipo" name="tipo" class="form-select">
+            <option value="">Todos</option>
+            @foreach (var t in tipos)
+            {
+                <option value="@t.Id" selected="@(t.Id == Tipo)">@t.Nombre</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2 d-flex align-items-end gap-2">
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+        <a class="btn btn-link" href="lista-maestra">Limpiar</a>
+    </div>
+</form>
+
+@if (pagina is null)
+{
+    @if (Error is null)
+    {
+        <p>Cargando…</p>
+    }
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="text-muted">@pagina.Total documento(s)</span>
+        <span>
+            Exportar:
+            <a href="@EnlaceExportar("xlsx")">Excel</a> ·
+            <a href="@EnlaceExportar("csv")">CSV</a>
+        </span>
+    </div>
+
+    @if (pagina.Elementos.Count == 0)
+    {
+        <p class="text-muted">No hay documentos vigentes que coincidan.</p>
+    }
+    else
+    {
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr><th>Código</th><th>Título</th><th>Área</th><th>Tipo</th><th>Rev.</th><th>Aprobada</th><th>Vigente desde</th><th>Próxima revisión</th><th>Responsable</th></tr>
+            </thead>
+            <tbody>
+            @foreach (var f in pagina.Elementos)
+            {
+                <tr>
+                    <td><a href="doc/@f.Codigo"><code>@f.Codigo</code></a></td>
+                    <td>@f.Titulo</td>
+                    <td>@f.Area@(f.SubArea is null ? "" : " / " + f.SubArea)</td>
+                    <td>@f.Tipo</td>
+                    <td>@f.Revision</td>
+                    <td>@Fecha(f.FechaAprobacionUtc)</td>
+                    <td>@Fecha(f.FechaVigenciaUtc)</td>
+                    <td>@Fecha(f.FechaProximaRevisionUtc)</td>
+                    <td>@f.Responsable</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+
+        @if (pagina.TotalPaginas > 1)
+        {
+            <nav aria-label="Páginas">
+                <ul class="pagination pagination-sm">
+                    <li class="page-item @(pagina.PaginaActual <= 1 ? "disabled" : "")">
+                        <a class="page-link" href="@EnlacePagina(pagina.PaginaActual - 1)">Anterior</a>
+                    </li>
+                    <li class="page-item disabled"><span class="page-link">Página @pagina.PaginaActual de @pagina.TotalPaginas</span></li>
+                    <li class="page-item @(pagina.PaginaActual >= pagina.TotalPaginas ? "disabled" : "")">
+                        <a class="page-link" href="@EnlacePagina(pagina.PaginaActual + 1)">Siguiente</a>
+                    </li>
+                </ul>
+            </nav>
+        }
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "texto")] public string? Texto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "area")] public int? Area { get; set; }
+
+    [SupplyParameterFromQuery(Name = "tipo")] public int? Tipo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "pagina")] public int Pagina { get; set; }
+
+    private Pagina<FilaListaMaestra>? pagina;
+    private IReadOnlyList<AreaDto> areas = [];
+    private IReadOnlyList<TipoDocumentoDto> tipos = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        areas = await Catalogo.ListarAreasAsync();
+        tipos = await Catalogo.ListarTiposAsync();
+
+        await EjecutarAsync(async _ =>
+            pagina = await Consulta.ListaMaestraAsync(new FiltroListaMaestra(Texto, Area, null, Tipo), Math.Max(1, Pagina)));
+    }
+
+    private static string Fecha(DateTime? utc) => utc?.ToLocalTime().ToString("dd/MM/yyyy") ?? "—";
+
+    private string Parametros(params (string Nombre, string? Valor)[] extra)
+    {
+        var partes = new List<(string, string?)> { ("texto", Texto), ("area", Area?.ToString()), ("tipo", Tipo?.ToString()) };
+        partes.AddRange(extra);
+        return string.Join('&', partes.Where(p => !string.IsNullOrEmpty(p.Item2)).Select(p => $"{p.Item1}={Uri.EscapeDataString(p.Item2!)}"));
+    }
+
+    private string EnlacePagina(int numero) => $"lista-maestra?{Parametros(("pagina", numero.ToString()))}";
+
+    private string EnlaceExportar(string formato) => $"lista-maestra/exportar?{Parametros(("formato", formato))}";
+}

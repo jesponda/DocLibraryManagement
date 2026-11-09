@@ -1,0 +1,166 @@
+@page "/buscar"
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Catalogo
+@using DocLibraryManagement.Application.Consulta
+@using DocLibraryManagement.Domain
+@inject IConsultaService Consulta
+@inject ICatalogoService Catalogo
+
+<PageTitle>Buscar</PageTitle>
+
+<h1>Buscar documentos</h1>
+<p class="text-muted">
+    Busca por código, título o por lo que dice el PDF vigente. Todas las palabras deben aparecer; no importan mayúsculas ni acentos.
+</p>
+
+<form method="get" class="row g-2 mb-3" style="max-width: 62rem">
+    <div class="col-md-6">
+        <label class="form-label" for="q">Qué buscas</label>
+        <input id="q" name="q" class="form-control" maxlength="200" value="@Q" autofocus />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="area">Área</label>
+        <select id="area" name="area" class="form-select">
+            <option value="">Todas</option>
+            @foreach (var a in areas)
+            {
+                <option value="@a.Id" selected="@(a.Id == Area)">@a.Codigo – @a.Nombre</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="tipo">Tipo</label>
+        <select id="tipo" name="tipo" class="form-select">
+            <option value="">Todos</option>
+            @foreach (var t in tipos)
+            {
+                <option value="@t.Id" selected="@(t.Id == Tipo)">@t.Nombre</option>
+            }
+        </select>
+    </div>
+    @if (puedeVerObsoletas)
+    {
+        <div class="col-12">
+            <div class="form-check">
+                <input id="obsoletas" name="obsoletas" value="1" type="checkbox" class="form-check-input" checked="@Obsoletas" />
+                <label class="form-check-label" for="obsoletas">Incluir revisiones obsoletas (consulta de auditoría)</label>
+            </div>
+        </div>
+    }
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Buscar</button>
+    </div>
+</form>
+
+<Mensajes Error="@Error" />
+
+@if (resultados is not null)
+{
+    <p class="text-muted">@resultados.Total resultado(s)</p>
+
+    @if (resultados.Elementos.Count == 0)
+    {
+        <p>No se encontró ningún documento con todas esas palabras.</p>
+    }
+
+    @foreach (var r in resultados.Elementos)
+    {
+        <div class="mb-3" style="max-width: 62rem">
+            <div>
+                <a href="@Enlace(r)"><code>@r.Codigo</code> – @r.Titulo</a>
+                <span class="badge text-bg-light border">@r.Revision</span>
+                @if (r.Estado == EstadoRevision.Obsoleto)
+                {
+                    <span class="badge text-bg-danger">Obsoleta</span>
+                }
+            </div>
+            <div class="text-muted small">@r.Area · @r.Tipo</div>
+            @if (r.Fragmento.Count > 0)
+            {
+                <div class="small">
+                    @foreach (var seg in r.Fragmento)
+                    {
+                        @if (seg.Resaltado)
+                        {
+                            <mark>@seg.Texto</mark>
+                        }
+                        else
+                        {
+                            <text>@seg.Texto</text>
+                        }
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (resultados.TotalPaginas > 1)
+    {
+        <nav aria-label="Páginas">
+            <ul class="pagination pagination-sm">
+                <li class="page-item @(resultados.PaginaActual <= 1 ? "disabled" : "")">
+                    <a class="page-link" href="@EnlacePagina(resultados.PaginaActual - 1)">Anterior</a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Página @resultados.PaginaActual de @resultados.TotalPaginas</span></li>
+                <li class="page-item @(resultados.PaginaActual >= resultados.TotalPaginas ? "disabled" : "")">
+                    <a class="page-link" href="@EnlacePagina(resultados.PaginaActual + 1)">Siguiente</a>
+                </li>
+            </ul>
+        </nav>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
+    [SupplyParameterFromQuery(Name = "area")] public int? Area { get; set; }
+
+    [SupplyParameterFromQuery(Name = "tipo")] public int? Tipo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "obsoletas")] public string? ObsoletasTexto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "pagina")] public int Pagina { get; set; }
+
+    private bool Obsoletas => ObsoletasTexto == "1";
+
+    private Pagina<ResultadoBusqueda>? resultados;
+    private IReadOnlyList<AreaDto> areas = [];
+    private IReadOnlyList<TipoDocumentoDto> tipos = [];
+    private bool puedeVerObsoletas;
+
+    protected override async Task OnInitializedAsync()
+    {
+        areas = await Catalogo.ListarAreasAsync();
+        tipos = await Catalogo.ListarTiposAsync();
+
+        // Solo se busca cuando hay algo escrito; la pantalla vacía es el punto de partida.
+        if (string.IsNullOrWhiteSpace(Q))
+        {
+            await EjecutarAsync(a =>
+            {
+                puedeVerObsoletas = a.EsAdministrador || a.TieneRol(RolSistema.Auditor);
+                return Task.CompletedTask;
+            });
+            return;
+        }
+
+        await EjecutarAsync(async a =>
+        {
+            puedeVerObsoletas = a.EsAdministrador || a.TieneRol(RolSistema.Auditor);
+            resultados = await Consulta.BuscarAsync(
+                a, new ConsultaBusqueda(Q, Area, Tipo, IncluirObsoletos: Obsoletas && puedeVerObsoletas), Math.Max(1, Pagina));
+        });
+    }
+
+    private static string Enlace(ResultadoBusqueda r) =>
+        r.Estado == EstadoRevision.Vigente ? $"doc/{r.Codigo}" : $"doc/{r.Codigo}/{r.Revision}";
+
+    private string EnlacePagina(int numero)
+    {
+        var partes = new List<(string, string?)>
+        {
+            ("q", Q), ("area", Area?.ToString()), ("tipo", Tipo?.ToString()), ("obsoletas", Obsoletas ? "1" : null), ("pagina", numero.ToString()),
+        };
+        return "buscar?" + string.Join('&', partes.Where(p => !string.IsNullOrEmpty(p.Item2)).Select(p => $"{p.Item1}={Uri.EscapeDataString(p.Item2!)}"));
+    }
+}

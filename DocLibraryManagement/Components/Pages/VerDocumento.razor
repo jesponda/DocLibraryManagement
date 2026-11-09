@@ -1,0 +1,110 @@
+@page "/doc/{Codigo}"
+@page "/doc/{Codigo}/{Etiqueta}"
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Consulta
+@using DocLibraryManagement.Application.Documentos
+@using DocLibraryManagement.Domain
+@inject IConsultaService Consulta
+@inject IRevisionService Revisiones
+
+<PageTitle>@(vista?.Codigo ?? Codigo)</PageTitle>
+
+<Mensajes Error="@Error" />
+
+@if (vista is null)
+{
+    <h1>Documento no disponible</h1>
+    <p>
+        No hay una revisión vigente de <code>@Codigo</code> que puedas consultar. Puede que el código esté mal escrito,
+        que el documento aún no se haya publicado o que haya sido retirado.
+    </p>
+    <p><a href="buscar">Buscar documentos</a> · <a href="lista-maestra">Ver la lista maestra</a></p>
+}
+else
+{
+    @if (vista.Estado == EstadoRevision.Obsoleto)
+    {
+        <div class="alert alert-danger" role="alert">
+            <strong>OBSOLETO.</strong> Esta revisión fue reemplazada o retirada y se muestra solo para consulta de auditoría.
+            <strong>No debe usarse.</strong>
+            <a class="alert-link" href="doc/@vista.Codigo">Ver la revisión vigente</a>
+        </div>
+    }
+    else if (vista.Estado != EstadoRevision.Vigente)
+    {
+        <div class="alert alert-warning" role="alert">
+            Esta revisión <strong>no está vigente</strong> (@Presentacion.NombreEstado(vista.Estado)). No debe usarse en la operación.
+        </div>
+    }
+
+    <h1><code>@vista.Codigo</code> <small class="text-muted">@vista.Etiqueta</small></h1>
+    <h2 class="h4">@vista.Titulo</h2>
+
+    <dl class="row" style="max-width: 50rem">
+        <dt class="col-sm-3">Área</dt><dd class="col-sm-9">@vista.Area@(vista.SubArea is null ? "" : " / " + vista.SubArea)</dd>
+        @if (vista.Tipo is not null)
+        {
+            <dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">@vista.Tipo</dd>
+        }
+        <dt class="col-sm-3">@(vista.ResponsableEsAutor ? "Elaborada por" : "Responsable")</dt><dd class="col-sm-9">@vista.Responsable</dd>
+        <dt class="col-sm-3">Vigente desde</dt><dd class="col-sm-9">@Fecha(vista.FechaVigenciaUtc)</dd>
+        <dt class="col-sm-3">Próxima revisión</dt><dd class="col-sm-9">@Fecha(vista.FechaProximaRevisionUtc)</dd>
+    </dl>
+
+    @if (vista.TienePdf)
+    {
+        <p>
+            <a class="btn btn-outline-primary btn-sm" href="archivos/@vista.RevisionId/pdf" target="_blank" rel="noopener">Abrir en otra pestaña</a>
+            <a class="btn btn-outline-secondary btn-sm" href="archivos/@vista.RevisionId/pdf" download="@($"{vista.Codigo}_{vista.Etiqueta}.pdf")">Descargar</a>
+        </p>
+        <iframe src="archivos/@vista.RevisionId/pdf" title="PDF de @vista.Codigo @vista.Etiqueta"
+                style="width: 100%; max-width: 70rem; height: 80vh; border: 1px solid #ccc"></iframe>
+    }
+    else
+    {
+        <p class="text-muted">Esta revisión no tiene PDF.</p>
+    }
+}
+
+@code {
+    /// <summary>Datos de lo que se muestra, vengan de la vigente o de una revisión concreta.</summary>
+    private sealed record Vista(
+        int RevisionId, string Codigo, string Titulo, string Etiqueta, EstadoRevision Estado, string Area, string? SubArea,
+        string? Tipo, string Responsable, bool ResponsableEsAutor, DateTime? FechaVigenciaUtc, DateTime? FechaProximaRevisionUtc, bool TienePdf);
+
+    [Parameter] public string Codigo { get; set; } = "";
+
+    [Parameter] public string? Etiqueta { get; set; }
+
+    private Vista? vista;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Etiqueta))
+        {
+            // Enlace estable: siempre lleva a lo vigente.
+            var v = await Consulta.ObtenerVigenteAsync(Codigo);
+            vista = v is null
+                ? null
+                : new Vista(v.RevisionId, v.Codigo, v.Titulo, v.Revision, EstadoRevision.Vigente, v.Area, v.SubArea, v.Tipo,
+                    v.Responsable, false, v.FechaVigenciaUtc, v.FechaProximaRevisionUtc, TienePdf: true);
+            return;
+        }
+
+        var ubicada = await Consulta.ResolverRevisionAsync(Codigo, Etiqueta);
+        if (ubicada is null)
+        {
+            return;
+        }
+
+        // Una revisión que no es la vigente solo la ven quienes tienen permiso; lo valida el servicio.
+        await EjecutarAsync(async a =>
+        {
+            var r = await Revisiones.ObtenerAsync(a, ubicada.Value.RevisionId);
+            vista = new Vista(r.Id, r.CodigoDocumento, r.Titulo, r.Etiqueta, r.Estado, r.CodigoArea, null, null,
+                r.Autor, true, r.FechaVigenciaUtc, r.FechaProximaRevisionUtc, r.TienePdf);
+        });
+    }
+
+    private static string Fecha(DateTime? utc) => utc?.ToLocalTime().ToString("dd/MM/yyyy") ?? "—";
+}

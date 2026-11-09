@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Versión del documento | 1.5 |
+| Versión del documento | 1.6 |
 | Fecha | 2026-11-05 |
 | Estado | Aprobado para iniciar Fase 1 |
 | Norma base | ISO 9001:2015 cláusula 7.5 (Información documentada), estructura Annex SL |
@@ -225,7 +225,7 @@ Cada fase debe terminar con: código compilando, pruebas pasando, resumen de lo 
 **Entrega en tres tramos**, con pausa de revisión al final de cada uno:
 - **2A – Catálogos y creación de documentos** *(entregado)*: catálogos configurables, creación con código automático (primera revisión Rev.00 en Borrador), listado y detalle básicos, copia de roles del usuario.
 - **2B – Borradores, archivos y flujo** *(entregado y validado)*: carga de archivos (7.5), plantillas de flujo por tipo (7.2), asignación de personas, decisiones, rechazos, reasignación y cancelación del flujo.
-- **2C – Publicación y ciclo de vida** *(entregado, pendiente de validación del usuario)*: publicación, revisión mayor y menor, vigencia diferida, obsolescencia automática y retiro (7.1, 7.3). La lógica de la activación diferida está aquí; ver la nota sobre su proceso de fondo en las decisiones del tramo.
+- **2C – Publicación y ciclo de vida** *(entregado y validado)*: publicación, revisión mayor y menor, vigencia diferida, obsolescencia automática y retiro (7.1, 7.3). La lógica de la activación diferida está aquí; ver la nota sobre su proceso de fondo en las decisiones del tramo.
 
 **Decisiones de diseño de la Fase 2:**
 - **Asignación de pasos a personas concretas:** al iniciar sesión se guarda en `Usuario` una **copia informativa** de sus roles y áreas (`RolesUltimoAcceso`, `AreasUltimoAcceso`). Con ella el autor elige candidatos al armar el flujo. Limitaciones: solo aparecen quienes ya entraron al menos una vez, y la copia puede estar desactualizada hasta 10 minutos. **Nunca se usa para autorizar:** la autorización siempre sale de los grupos de AD vigentes, y el servicio debe volver a validar que la persona asignada tenga el rol al decidir.
@@ -252,20 +252,29 @@ Cada fase debe terminar con: código compilando, pruebas pasando, resumen de lo 
 - **Publicación automática:** al aprobar la **última** etapa del flujo la revisión pasa a *Vigente* en el acto y la anterior a *Obsoleto*, en una misma transacción. Esa transición tiene una sola puerta (`Publicacion.PublicarAsync`) y la garantiza además el índice único «una sola vigente por documento». Como el índice no tolera dos vigentes ni a mitad de una sentencia, el guardado se hace en dos pasos dentro de la transacción (primero se libera la anterior).
 - **Vigencia diferida:** quien da la última aprobación puede indicar una fecha (máximo 365 días). Con fecha futura la revisión queda *Aprobado*, la vigente sigue en uso y, al llegar la fecha, se publica con la fecha **programada** (no la hora real en que corrió el proceso). Sin fecha, o con una ya pasada, es inmediata. La fecha se ignora en etapas intermedias y al rechazar.
 - **Próxima revisión periódica:** al hacerse *Vigente* se calcula como la vigencia + los meses del tipo (`MesesRevision`). El aviso y la gestión de vencimientos son de la Fase 4.
-- **Activación diferida:** la lógica es `IPublicacionService.ActivarPendientesAsync` (idempotente; cada revisión en su transacción, un fallo no afecta a las demás). Se dispara con un proceso de fondo mínimo, `ActivadorDeVigencias`, configurable con `Publicacion:MinutosEntreRevisiones` (5 por defecto; 0 lo desactiva). **Se adelantó desde la Fase 4** porque sin él la vigencia diferida no funcionaría de punta a punta; el resto de trabajos programados (vencimientos, alertas, correo) siguen en la Fase 4.
+- **Activación diferida:** la lógica es `IPublicacionService.ActivarPendientesAsync` (idempotente; cada revisión en su transacción, un fallo no afecta a las demás). Se dispara con un proceso de fondo mínimo (`TareasDeFondo`, ver Fase 3), configurable con `TareasDeFondo:MinutosEntreEjecuciones` (5 por defecto; 0 lo desactiva). **Se adelantó desde la Fase 4** porque sin él la vigencia diferida no funcionaría de punta a punta; el resto de trabajos programados (vencimientos, alertas, correo) siguen en la Fase 4.
 - **Numeración:** `Rev.00` es la primera emisión. Una **mayor** suma 1 y reinicia la menor (Rev.03 → Rev.04); una **menor** suma 1 a la menor (Rev.03 → Rev.03.1 → Rev.03.2). Un **borrador cancelado no consume número**: el índice único (documento, mayor, menor) excluye las revisiones *Cancelado*, de modo que el siguiente borrador puede volver a ser Rev.01.
 - **Una sola revisión abierta** por documento: no se puede abrir otra mientras haya un borrador, un flujo en curso o una revisión aprobada pendiente de entrar en vigor. Se abre siempre a partir de la vigente; los archivos no se heredan (se sube el PDF nuevo).
 - **Revisión menor:** exige declarar que *no altera requisitos, pasos ni responsabilidades* (queda en la bitácora). Se aprueba en **una sola etapa** y **no usa la plantilla del tipo**. El aprobador es el **dueño del área**, una figura nueva: el Administrador designa por área a una persona con rol Aprobador (`Area.DuenoId`). Sin dueño no se pueden abrir ni enviar menores. El dueño no puede aprobar una menor que él mismo elaboró (separación de funciones) y debe seguir teniendo el rol Aprobador.
 - **Descartar borradores:** un borrador posterior a la primera emisión se descarta quedando *Cancelado* (la primera emisión se cancela con «Cancelar este documento», que retira el código).
 - **Retiro:** solo el **Administrador**, con motivo obligatorio y bitácora (decisión de la v1; no hay flujo de solicitud y aprobación). La revisión vigente pasa a *Obsoleto* y todo lo abierto (borradores, flujos en curso, revisión aprobada pendiente) se cancela, sin dejar tareas pendientes huérfanas. El código no se reutiliza.
-- **Obsoletos:** conservan sus archivos intactos (se sigue verificando el hash) y solo los consultan gestores; descargar una obsoleta queda en la bitácora. La lista maestra y el banner de obsoleto para lectura son de la Fase 3.
-- **Pendiente:** la extracción del texto del PDF al publicar (para la búsqueda de texto completo, 7.7) se hará en la Fase 3, junto con la búsqueda.
+- **Obsoletos:** conservan sus archivos intactos (se sigue verificando el hash) y solo los consultan gestores; descargar una obsoleta queda en la bitácora. La lista maestra y el banner de obsoleto para lectura se hicieron en la Fase 3.
 
-### Fase 3 – Consulta
+### Fase 3 – Consulta *(entregada, pendiente de validación del usuario)*
 - Lista maestra (filtros, exportación a Excel/CSV).
 - Visor del PDF vigente, enlace estable `/doc/{codigo}`, vista de obsoletos con banner.
 - Búsqueda de texto completo (7.7).
 - **Aceptación:** un Lector llega al PDF vigente en pocos clics; una búsqueda por contenido encuentra el documento correcto; un Lector no ve obsoletos.
+
+**Decisiones de la Fase 3:**
+- **Búsqueda propia en lugar de SQL Server Full-Text.** El LocalDB de desarrollo **no incluye Full-Text Search** (`IsFullTextInstalled = 0`), así que el prompt original (7.7) no era ejecutable ni probable allí. Se decidió una búsqueda con SQL estándar, **igual en desarrollo y producción**, adecuada para <1,000 documentos: cada palabra se busca con `LIKE` sobre código, título y texto extraído usando la intercalación explícita `Latin1_General_100_CI_AI` (sin distinguir mayúsculas ni acentos, sea cual sea la de la BD). Todas las palabras deben aparecer (AND). **Limitaciones aceptadas:** no hace raíces de palabras (buscar «calibrar» no encuentra «calibración») ni una relevancia fina; la relevancia es en dos niveles (primero lo que coincide en código o título, luego solo en el contenido, y dentro de cada nivel por código). Si el volumen crece, la consulta está detrás de `IConsultaService` y puede cambiarse a Full-Text en un servidor que lo tenga sin tocar las pantallas.
+- **Lectura del texto de los PDF** con PdfPig (Apache-2.0, solo .NET, sin instalar nada en el servidor), tope de 2 millones de caracteres por PDF. Se lee **al subir el PDF** (no al publicar) para poder avisar al autor de inmediato; reemplazar el PDF reemplaza el texto. `TextoExtraido`: *null* = nunca leído, *vacío* = leído pero sin texto. Un PDF **escaneado o ilegible se acepta** igual, con un aviso al autor de que no se encontrará por contenido (sin OCR; bloquearlo impediría publicar documentos escaneados legítimos).
+- **Indexado de lo ya publicado:** `IIndexadorService` lee el texto de revisiones vigentes/obsoletas/aprobadas que aún no lo tienen (p. ej. publicadas en la Fase 2), en lotes de 25, y no reintenta los PDF sin texto. Si el archivo falta, lo deja pendiente sin fallar.
+- **`TareasDeFondo`** (antes `ActivadorDeVigencias`) agrupa las tareas periódicas: activar vigencias diferidas e indexar texto. Configuración `TareasDeFondo:MinutosEntreEjecuciones` (5; 0 desactiva). *El nombre de la opción anterior (`Publicacion:MinutosEntreRevisiones`) ya no existe.*
+- **Lista maestra:** la revisión *vigente* de cada documento *activo*, lectura abierta; filtros por código/título, área, tipo y subárea; paginada (25) y ordenada por código. **Exportación a CSV** (UTF-8 con BOM, comas, con protección contra inyección de fórmulas: las celdas que empiezan con `= + - @` llevan apóstrofo) **y Excel** (ClosedXML, MIT; texto siempre literal, fechas como fechas), con los mismos filtros, tope de 5,000 filas, fechas en la hora local del servidor.
+- **Búsqueda (`/buscar`):** por defecto solo revisiones vigentes de documentos activos. **Incluir obsoletas** (consulta de auditoría) solo lo pueden pedir Administrador y Auditor; el servicio lo exige aunque la URL lo pida. Resultados paginados (20) con fragmento resaltado; el resaltado se devuelve como segmentos de texto, nunca como HTML, así que el contenido del PDF no puede inyectar marcado.
+- **Visor y enlace estable:** `/doc/{codigo}` lleva siempre a la revisión vigente (el código no distingue mayúsculas) con el PDF incrustado. `/doc/{codigo}/{etiqueta}` (p. ej. `Rev.00`) muestra una revisión concreta: una obsoleta solo la ven Administrador, Auditor y Autores del área, con un banner rojo **OBSOLETO – No debe usarse** y enlace a la vigente. Un documento inexistente, no publicado o retirado muestra **el mismo mensaje genérico** a un lector, sin revelar su existencia ni su título.
+- **No incluido (pendiente):** los **vencimientos y alertas** de la revisión periódica siguen en la Fase 4; el **texto de los PDF no se vuelve a leer** si cambia el motor de extracción (habría que invalidar `TextoExtraido`).
 
 ### Fase 4 – Alertas y reportes
 - Jobs de vigencia diferida y vencimientos (7.4), escalamiento.
@@ -328,6 +337,7 @@ Pendientes de datos reales (no bloquean la Fase 1, bloquean la puesta en producc
 | 1.3 | 2026-11-05 | Tramo 2A construido (catálogos y creación de documentos). Se documentan los tramos de la Fase 2 y sus decisiones de diseño. |
 | 1.4 | 2026-11-05 | Tramo 2B construido (archivos, plantillas de flujo, decisiones). Nuevo estado de revisión *Cancelado*. Decisiones del tramo documentadas. |
 | 1.5 | 2026-11-05 | Tramo 2C construido (publicación automática, vigencia diferida, revisiones mayor/menor, dueño de área, descarte de borradores, retiro). Se adelanta un proceso de fondo mínimo para la activación diferida. |
+| 1.6 | 2026-11-09 | Fase 3 construida (lista maestra con exportación, búsqueda por contenido, visor y enlace estable). La búsqueda no usa SQL Server Full-Text porque el LocalDB de desarrollo no lo incluye. `ActivadorDeVigencias` pasa a `TareasDeFondo`. |
 
 ## 14. Referencias
 

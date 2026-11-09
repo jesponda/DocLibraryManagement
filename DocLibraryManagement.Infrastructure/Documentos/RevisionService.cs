@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using DocLibraryManagement.Application.Archivos;
 using DocLibraryManagement.Application.Comun;
+using DocLibraryManagement.Application.Consulta;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Domain;
 using DocLibraryManagement.Infrastructure.Persistencia;
@@ -13,6 +14,7 @@ internal sealed class RevisionService(
     IDbContextFactory<AppDbContext> fabrica,
     IFileStore almacen,
     IOptions<ArchivosOptions> opciones,
+    IExtractorTexto extractor,
     TimeProvider reloj) : IRevisionService
 {
     private const int MaximoMotivo = 1000;
@@ -94,7 +96,7 @@ internal sealed class RevisionService(
 
     // ---------- Archivos ----------
 
-    public async Task SubirArchivoAsync(Actor actor, int revisionId, TipoArchivo tipo, string nombreOriginal, Stream contenido, CancellationToken ct = default)
+    public async Task<ResultadoSubida> SubirArchivoAsync(Actor actor, int revisionId, TipoArchivo tipo, string nombreOriginal, Stream contenido, CancellationToken ct = default)
     {
         var extension = ReglasArchivo.ValidarExtension(tipo, nombreOriginal);
 
@@ -109,8 +111,16 @@ internal sealed class RevisionService(
             cabecera => ReglasArchivo.ValidarCabecera(extension, cabecera), ct);
 
         string? rutaAnterior = null;
+        ExtraccionTexto? extraccion = null;
         try
         {
+            // El texto se lee del archivo ya guardado (no del flujo de subida, que no se puede releer).
+            if (tipo == TipoArchivo.Pdf)
+            {
+                await using var lectura = almacen.Abrir(guardado.Ruta);
+                extraccion = await extractor.ExtraerAsync(lectura, ct);
+            }
+
             // Se vuelve a leer: durante la subida el flujo pudo haber iniciado y el archivo ya no sería editable.
             await using var db = await fabrica.CreateDbContextAsync(ct);
             var r = await CargarAsync(db, revisionId, ct);
@@ -121,6 +131,7 @@ internal sealed class RevisionService(
                 rutaAnterior = r.RutaArchivoPdf;
                 r.RutaArchivoPdf = guardado.Ruta;
                 r.HashArchivoPdf = guardado.HashSha256;
+                r.TextoExtraido = extraccion!.Texto; // "" = leído pero sin texto; reemplazar el PDF reemplaza también el texto
             }
             else
             {
@@ -130,7 +141,9 @@ internal sealed class RevisionService(
             }
 
             Bitacora.Registrar(db, reloj, actor, tipo == TipoArchivo.Pdf ? "Revision.SubirPdf" : "Revision.SubirFuente",
-                nameof(Documento), r.Documento!.Codigo, nuevo: $"{r.Etiqueta}; SHA256={guardado.HashSha256}; Bytes={guardado.Bytes}");
+                nameof(Documento), r.Documento!.Codigo,
+                nuevo: $"{r.Etiqueta}; SHA256={guardado.HashSha256}; Bytes={guardado.Bytes}"
+                       + (extraccion is null ? "" : $"; TextoBuscable={(extraccion.TieneTexto ? "sí" : "no")}"));
 
             await GuardarAsync(db, ct);
         }
@@ -145,6 +158,16 @@ internal sealed class RevisionService(
         {
             await almacen.EliminarAsync(rutaAnterior, CancellationToken.None); // el borrador reemplazado ya no se necesita
         }
+
+        return extraccion switch
+        {
+            null => new ResultadoSubida(false, null), // la fuente editable no se indexa
+            { TieneTexto: true } => new ResultadoSubida(true, null),
+            { PudoLeerse: false } => new ResultadoSubida(false,
+                "No se pudo leer el contenido del PDF (¿está dañado o protegido con contraseña?). Puedes enviarlo, pero no se encontrará al buscar por contenido."),
+            _ => new ResultadoSubida(false,
+                "Este PDF no contiene texto seleccionable (parece escaneado). Puedes enviarlo, pero no se encontrará al buscar por contenido."),
+        };
     }
 
     public async Task<ArchivoParaDescarga> AbrirArchivoAsync(Actor actor, int revisionId, TipoArchivo tipo, CancellationToken ct = default)
@@ -174,8 +197,9 @@ internal sealed class RevisionService(
         {
             flujo = almacen.Abrir(ruta);
         }
-        catch (FileNotFoundException)
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
+            // También si falta la carpeta entera del almacén (p. ej. una unidad de red desmontada).
             await RegistrarFalloIntegridadAsync(db, actor, r, tipo, "archivo no encontrado", ct);
             throw new ReglaNegocioException("El archivo no está en el almacén. Avisa a IT.");
         }
