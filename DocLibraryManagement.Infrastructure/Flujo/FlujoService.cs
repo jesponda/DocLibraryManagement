@@ -1,15 +1,30 @@
 using DocLibraryManagement.Application.Comun;
+using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Application.Flujo;
 using DocLibraryManagement.Domain;
+using DocLibraryManagement.Infrastructure.Correo;
 using DocLibraryManagement.Infrastructure.Documentos;
 using DocLibraryManagement.Infrastructure.Persistencia;
 using Microsoft.EntityFrameworkCore;
 
 namespace DocLibraryManagement.Infrastructure.Flujo;
 
-internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, TimeProvider reloj) : IFlujoService
+internal sealed class FlujoService(
+    IDbContextFactory<AppDbContext> fabrica,
+    TimeProvider reloj,
+    IEncoladorNotificaciones notificador) : IFlujoService
 {
+    /// <summary>Valores de la plantilla «tarea asignada» (también se usa al reasignar y al llegar el turno de la siguiente etapa).</summary>
+    private Dictionary<string, string> ValoresTarea(RevisionDocumento r, PasoInstancia paso)
+    {
+        var valores = notificador.ValoresBase(r.Documento!, r.Etiqueta);
+        valores["Etapa"] = paso.Nombre;
+        valores["TipoEtapa"] = paso.Clase == TipoPaso.Revision ? "revisión" : "aprobación";
+        valores["Autor"] = r.Autor?.NombreVisible ?? "—";
+        return valores;
+    }
+
     private const string MensajeConcurrencia =
         "El flujo cambió mientras lo consultabas (alguien más decidió o lo canceló). Recarga la página.";
 
@@ -211,6 +226,10 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
         Bitacora.Registrar(db, reloj, actor, "Flujo.Iniciar", nameof(Documento), r.Documento.Codigo,
             anterior: $"{r.Etiqueta} Borrador", nuevo: $"{r.Etiqueta} {r.Estado}; flujo #{numero}: {resumen}");
 
+        // Solo la primera etapa tiene turno ahora; las demás reciben su aviso cuando les toca.
+        await notificador.EncolarAsync(db, EventosCorreo.TareaAsignada, pasos[0].AsignadoAId, ValoresTarea(r, pasos[0]),
+            r.Documento.Codigo, ct: ct);
+
         await GuardarAsync(db, ct);
     }
 
@@ -283,6 +302,7 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
             .Include(p => p.AsignadoA)
             .Include(p => p.Instancia!).ThenInclude(i => i.Pasos)
             .Include(p => p.Instancia!).ThenInclude(i => i.Revision!).ThenInclude(r => r.Documento!).ThenInclude(d => d.TipoDocumento)
+            .Include(p => p.Instancia!).ThenInclude(i => i.Revision!).ThenInclude(r => r.Autor)
             .FirstOrDefaultAsync(p => p.Id == pasoId, ct)
             ?? throw new ReglaNegocioException("La etapa no existe.");
 
@@ -324,12 +344,14 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
         string resultado;
         var publicarAhora = false;
         DateTime vigencia = ahora;
+        PasoInstancia? siguienteTurno = null;
         if (aprobar)
         {
             paso.Estado = EstadoPaso.Aprobado;
             var siguiente = instancia.Pasos.Where(p => p.Estado == EstadoPaso.Pendiente && p.Id != paso.Id).MinBy(p => p.Orden);
             if (siguiente is not null)
             {
+                siguienteTurno = siguiente;
                 revision.Estado = siguiente.Clase.EstadoDeRevision();
                 resultado = $"Aprobada; sigue «{siguiente.Nombre}»";
             }
@@ -370,6 +392,21 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
         Bitacora.Registrar(db, reloj, actor, aprobar ? "Flujo.Aprobar" : "Flujo.Rechazar", nameof(Documento), revision.Documento!.Codigo,
             nuevo: $"{revision.Etiqueta} «{paso.Nombre}»: {resultado}", comentario: paso.Comentario);
 
+        // Avisos: le toca a la siguiente persona, o el autor debe corregir. (La publicación avisa por su cuenta.)
+        if (siguienteTurno is not null)
+        {
+            await notificador.EncolarAsync(db, EventosCorreo.TareaAsignada, siguienteTurno.AsignadoAId, ValoresTarea(revision, siguienteTurno),
+                revision.Documento.Codigo, ct: ct);
+        }
+        else if (!aprobar)
+        {
+            var valores = notificador.ValoresBase(revision.Documento, revision.Etiqueta);
+            valores["Actor"] = decisor.NombreVisible;
+            valores["Etapa"] = paso.Nombre;
+            valores["Motivo"] = texto;
+            await notificador.EncolarAsync(db, EventosCorreo.Rechazada, revision.AutorId, valores, revision.Documento.Codigo, ct: ct);
+        }
+
         if (!publicarAhora)
         {
             await GuardarAsync(db, ct);
@@ -378,7 +415,7 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
 
         try
         {
-            await Publicacion.PublicarAsync(db, reloj, actor, revision, revision.Documento.Codigo,
+            await Publicacion.PublicarAsync(db, reloj, notificador, actor, revision, revision.Documento.Codigo,
                 revision.Documento.TipoDocumento!.MesesRevision, vigencia, ct);
         }
         catch (DbUpdateConcurrencyException)
@@ -397,6 +434,7 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
         var paso = await db.PasosInstancia
             .Include(p => p.AsignadoA)
             .Include(p => p.Instancia!).ThenInclude(i => i.Revision!).ThenInclude(r => r.Documento!).ThenInclude(d => d.Area)
+            .Include(p => p.Instancia!).ThenInclude(i => i.Revision!).ThenInclude(r => r.Autor)
             .FirstOrDefaultAsync(p => p.Id == pasoId, ct)
             ?? throw new ReglaNegocioException("La etapa no existe.");
 
@@ -417,6 +455,10 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
 
         Bitacora.Registrar(db, reloj, actor, "Flujo.Reasignar", nameof(Documento), revision.Documento.Codigo,
             anterior: $"{revision.Etiqueta} «{paso.Nombre}»: {anterior}", nuevo: nuevo.NombreVisible, comentario: texto);
+
+        // La persona nueva debe enterarse de que ahora la etapa es suya.
+        await notificador.EncolarAsync(db, EventosCorreo.TareaAsignada, nuevo.Id, ValoresTarea(revision, paso),
+            revision.Documento.Codigo, ct: ct);
 
         await GuardarAsync(db, ct);
     }
@@ -461,6 +503,7 @@ internal sealed class FlujoService(IDbContextFactory<AppDbContext> fabrica, Time
 
     private static async Task<RevisionDocumento> CargarRevisionAsync(AppDbContext db, int id, CancellationToken ct) =>
         await db.Revisiones.Include(r => r.Documento!).ThenInclude(d => d.Area!).ThenInclude(a => a.Dueno)
+            .Include(r => r.Autor)
             .FirstOrDefaultAsync(r => r.Id == id, ct)
         ?? throw new ReglaNegocioException("La revisión no existe.");
 

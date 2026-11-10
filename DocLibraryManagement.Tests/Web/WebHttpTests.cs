@@ -56,6 +56,14 @@ public class WebHttpTests(AplicacionWebFixture app) : IClassFixture<AplicacionWe
     [InlineData("revisor", "/administracion/flujos", false)]
     [InlineData("admin", "/administracion/areas", true)]
     [InlineData("auditor", "/administracion/tipos", false)]
+    [InlineData("admin", "/administracion/usuarios", true)]
+    [InlineData("auditor", "/administracion/usuarios", false)]
+    [InlineData("autor-cal", "/administracion/usuarios", false)]
+    [InlineData("lector", "/administracion/usuarios", false)]
+    [InlineData("admin", "/administracion/correo", true)]
+    [InlineData("auditor", "/administracion/correo", false)]
+    [InlineData("aprobador", "/administracion/correo", false)]
+    [InlineData("lector", "/administracion/correo", false)]
     [InlineData("autor-cal", "/documentos/nuevo", true)]
     [InlineData("auditor", "/documentos/nuevo", false)]
     [InlineData("lector", "/documentos/nuevo", false)]
@@ -72,6 +80,36 @@ public class WebHttpTests(AplicacionWebFixture app) : IClassFixture<AplicacionWe
             Assert.Equal(HttpStatusCode.Redirect, estado);
             Assert.Contains("/acceso-denegado", redireccion);
         }
+    }
+
+    [Fact]
+    public async Task La_pantalla_de_usuarios_lista_a_las_personas_con_su_correo_efectivo()
+    {
+        var (estado, _, texto) = await PedirAsync("admin", "/administracion/usuarios");
+
+        Assert.Equal(HttpStatusCode.OK, estado);
+        Assert.Contains("DEV\\autor-cal", texto);
+        Assert.Contains("autor-cal@planta.local", texto); // convención de appsettings.Development.json
+    }
+
+    [Fact]
+    public async Task La_pantalla_de_correo_avisa_que_esta_desactivado_en_lugar_de_mostrar_una_cola_vacia_enganosa()
+    {
+        var (estado, _, texto) = await PedirAsync("admin", "/administracion/correo");
+
+        Assert.Equal(HttpStatusCode.OK, estado);
+        Assert.Contains("El correo está desactivado", texto);
+    }
+
+    [Fact]
+    public async Task El_panel_de_administracion_ofrece_los_accesos_a_usuarios_y_a_la_cola_de_correo()
+    {
+        var html = await HtmlAsync("admin", "/administracion");
+
+        Assert.Contains("href=\"administracion/usuarios\"", html);
+        Assert.Contains("href=\"administracion/correo\"", html);
+        Assert.Contains("Usuarios y correos", Texto(html));
+        Assert.Contains("Cola de correo", Texto(html));
     }
 
     [Theory]

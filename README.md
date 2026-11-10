@@ -41,10 +41,12 @@ aprobó, cuál es la revisión **vigente**, y garantiza que nadie use una revisi
 | 2C | Publicación, vigencia diferida, revisiones mayor/menor, dueño de área, retiro | Terminada y validada |
 | 3 | Lista maestra + exportación, búsqueda por contenido, visor y enlace estable | Terminada y validada |
 | 3+ | Ajuste: el Administrador puede cambiar la fecha o anular una aprobación que aún no entra en vigor | **Construido; validación manual pendiente** |
-| 4 | Vencimientos de la revisión periódica, alertas, correo, reportes | **No iniciada** |
+| 4A | Correo: cola en BD con reintentos, plantillas en español, SMTP/carpeta, avisos de los eventos existentes, pantallas de usuarios y de cola | **Construido; validación manual pendiente** |
+| 4B | Vencimientos de la revisión periódica: alertas a 30 y 7 días, estado «Vencido», escalamiento, «revisado sin cambios» | **No iniciada** |
+| 4C | Reportes, pantalla de la bitácora, cambio de responsable | **No iniciada** |
 | 5 | Endurecimiento, guía de operación, script de despliegue | **No iniciada** |
 
-**Verificación automatizada:** 525 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
+**Verificación automatizada:** 631 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
 **No hay pruebas de interfaz en navegador:** los clics dentro de las pantallas (subir con el selector de archivos, elegir
 personas en desplegables, botones) solo se han validado manualmente.
 
@@ -54,8 +56,9 @@ personas en desplegables, botones) solo se han validado manualmente.
    en el equipo de desarrollo (no unido a un dominio clásico) el apretón de manos falla con `InvalidToken`. Hay que
    validarlo en un servidor unido al dominio con los grupos reales de AD. Ver [§6](#6-seguridad) y [§9](#9-puesta-en-producción).
 2. **Entra ID / OpenID Connect no está implementado.** Solo existen el modo `Windows` y el modo `Desarrollo`.
-3. **No se envían correos** ni hay alertas de vencimiento (Fase 4). La fecha de próxima revisión se calcula y se guarda,
-   pero nada la consume todavía.
+3. **El correo (4A) solo se ha probado contra un servidor SMTP de prueba local**, no contra el servidor corporativo
+   (autenticación, TLS y relay pueden requerir ajustes). Por defecto está **desactivado** (`Correo:Modo = Desactivado`).
+   **Aún no hay alertas de vencimiento** (4B): la fecha de próxima revisión se calcula y se guarda, pero nada la consume todavía.
 4. **El script de despliegue y la guía de operación no existen** (Fase 5). La protección de la tabla de auditoría a nivel
    de permisos de BD está **diseñada pero no escrita** (ver [§6.5](#65-bitácora-de-auditoría)).
 5. **Pendientes de datos reales:** grupos de AD, servidor SMTP, ruta del almacén de archivos, política de respaldo.
@@ -190,7 +193,10 @@ Navegador ──HTTP/SignalR──▶ Kestrel/IIS ──▶ Blazor Server (circu
              SQL Server (EF Core)     Almacén de archivos        TareasDeFondo (BackgroundService)
              metadatos, flujo,        carpeta local o UNC,       · activa vigencias diferidas
              texto extraído,          fuera de wwwroot,          · indexa texto de PDF pendientes
-             bitácora                 nombres GUID + SHA-256
+             cola de correo,          nombres GUID + SHA-256
+             bitácora
+                                                  EnvioDeCorreo (BackgroundService, aparte)
+                                                  · envía la cola de correo (SMTP o carpeta .eml)
 ```
 
 ---
@@ -212,7 +218,8 @@ DocLibraryManagement/
 │   ├── Catalogo.cs                    Area (con DuenoId), SubArea, TipoDocumento, asociaciones tipo↔área/subárea
 │   ├── Documentos.cs                  Documento, RevisionDocumento (RowVersion, Etiqueta "Rev.03.1")
 │   ├── Flujo.cs                       PasoPlantilla, InstanciaFlujo, PasoInstancia; TipoPaso/EstadoFlujo/EstadoPaso
-│   └── Usuarios.cs                    Usuario (con copia informativa de roles), EventoAuditoria
+│   ├── Notificaciones.cs              Notificacion (cola de correo), EstadoNotificacion
+│   └── Usuarios.cs                    Usuario (con copia informativa de roles y correo opcional), EventoAuditoria
 │
 ├── DocLibraryManagement.Application/  (≈1,100 líneas)
 │   ├── Comun/Actor.cs                 Actor, ReglaNegocioException, AccesoDenegadoException
@@ -226,6 +233,7 @@ DocLibraryManagement/
 │   │   ├── IPublicacionService.cs     Activación de vigencias diferidas
 │   │   └── ReglasRevision.cs          Numeración Rev.NN/Rev.NN.M, resolución de vigencia (máx. 365 días)
 │   ├── Flujo/IFlujoService.cs         Plantillas, envío, decisiones, reasignación + ReglasFlujo
+│   ├── Correo/Correo.cs               CorreoOptions, plantillas (PlantillasCorreo), ResolutorCorreo, contratos de cola y usuarios
 │   ├── Archivos/Archivos.cs           IFileStore, ReglasArchivo (extensión + firma real), ArchivosOptions
 │   ├── Consulta/
 │   │   ├── IConsultaService.cs        Lista maestra, búsqueda, visor
@@ -241,7 +249,7 @@ DocLibraryManagement/
 │   │   ├── Bitacora.cs                Registrar(...) y detección de violación de unicidad
 │   │   ├── UsuarioSincronizador.cs    Alta/actualización de usuario al iniciar sesión
 │   │   ├── AppDbContextFactory.cs     Solo para `dotnet ef` (usa DOCLIB_CONNECTION o LocalDB)
-│   │   └── Migraciones/               5 migraciones (Inicial, UsuarioRolesCopia, FlujoYArchivos, PublicacionYDueno, MotivoCierreFlujo)
+│   │   └── Migraciones/               6 migraciones (Inicial, UsuarioRolesCopia, FlujoYArchivos, PublicacionYDueno, MotivoCierreFlujo, Notificaciones)
 │   ├── Catalogo/CatalogoService.cs
 │   ├── Documentos/
 │   │   ├── DocumentoService.cs        Creación con consecutivo seguro ante concurrencia (reintento)
@@ -251,6 +259,12 @@ DocLibraryManagement/
 │   │   ├── PermisosDocumento.cs       Quién puede ver qué (gestores, asignados, lectura abierta)
 │   │   └── TareasDeFondo.cs           BackgroundService: activa vigencias e indexa texto
 │   ├── Flujo/FlujoService.cs          Envío, decisiones, separación de funciones, reasignar, cancelar
+│   ├── Correo/
+│   │   ├── EncoladorNotificaciones.cs Encola el aviso en la MISMA transacción del cambio de negocio (interno)
+│   │   ├── ColaCorreoService.cs       Reserva con RowVersion + arriendo, envío, reintentos exponenciales, Reintentar
+│   │   ├── SendersCorreo.cs           CarpetaCorreoSender (.eml) y SmtpCorreoSender (MailKit)
+│   │   ├── EnvioDeCorreo.cs           BackgroundService que procesa la cola
+│   │   └── UsuariosService.cs         Listado de usuarios y captura del correo (solo Administrador)
 │   ├── Archivos/FileStoreEnDisco.cs   Escritura atómica, SHA-256, límite de tamaño, anti path-traversal
 │   └── Consulta/
 │       ├── ConsultaService.cs         Lista maestra y búsqueda (LIKE + intercalación CI_AI)
@@ -276,8 +290,10 @@ DocLibraryManagement/
 │       ├── Revision/PanelRevision.razor   Panel de una revisión: archivos, envío, flujo, decisión
 │       └── Pages/                     Una página por ruta (ver tabla abajo)
 │
-└── DocLibraryManagement.Tests/        (≈6,300 líneas; 525 pruebas)
+└── DocLibraryManagement.Tests/        (631 pruebas)
     ├── Datos/                         BaseDatosFixture, Escenario (servicios reales + reloj simulado), GeneradorPdf
+    ├── Correo/                        Reglas puras, avisos por evento, cola (reintentos, concurrencia), SMTP real local, usuarios
+    │                                  (Dobles.cs: remitente falso y servidor SMTP mínimo de verdad)
     ├── Seguridad/ · Catalogo/ · Archivos/ · Flujo/ · Documentos/ · Consulta/
     └── Web/                           AplicacionWebFixture, WebHttpTests, WebConsultaTests
 ```
@@ -295,6 +311,8 @@ DocLibraryManagement/
 | `/documentos`, `/documentos/nuevo`, `/documentos/{id}` | Autor / Admin / Auditor (detalle también Revisor y Aprobador asignados) | interactivo | Gestión de documentos y revisiones |
 | `/pendientes` | Revisor, Aprobador | interactivo | Mis tareas |
 | `/administracion`, `/areas`, `/tipos`, `/flujos` | Administrador | interactivo | Catálogos y plantillas de flujo |
+| `/administracion/usuarios` | Administrador | interactivo | Usuarios y su correo (capturado o por convención) |
+| `/administracion/correo` | Administrador | interactivo | Cola de correo: estado, último error, reintentar |
 | `/archivos/{revisionId}/{pdf\|fuente}` | autenticado + permiso por revisión | endpoint | Descarga con verificación de hash |
 | `/lista-maestra/exportar?formato=csv\|xlsx` | autenticado | endpoint | Exportación con los filtros de la pantalla |
 | `/health` | anónimo | endpoint | Sondeo básico (**no** comprueba la BD) |
@@ -487,6 +505,16 @@ niveles es `__`) o *user secrets* en desarrollo. **No guardar secretos en el rep
 | `Archivos:RutaBase` | vacío → `App_Data/archivos` | Carpeta del almacén (local o UNC), fuera de wwwroot | **Sí** |
 | `Archivos:TamanoMaximoMb` | `50` | Tamaño máximo por archivo | Opcional |
 | `TareasDeFondo:MinutosEntreEjecuciones` | `5` | Periodicidad de las tareas de fondo; `0` las desactiva | Opcional |
+| `Correo:Modo` | `Desactivado` | `Desactivado` (no encola nada), `Carpeta` (archivos `.eml`, desarrollo) o `Smtp` | **Sí** |
+| `Correo:Servidor` / `Puerto` / `Seguridad` | vacío / `25` / `Auto` | Servidor SMTP. Seguridad: `Auto`, `StartTls`, `Ssl`, `Ninguna` | **Sí** (modo Smtp) |
+| `Correo:Usuario` / `Clave` | vacío | Credenciales SMTP si el servidor las exige. **Clave por variable de entorno o secretos** | Según el servidor |
+| `Correo:Remitente` / `NombreRemitente` | vacío | Dirección desde la que se envía (obligatoria para enviar) | **Sí** |
+| `Correo:PatronCorreo` | vacío | Convención para armar la dirección, p. ej. `{usuario}@empresa.com` | **Sí** |
+| `Correo:UrlBase` | vacío | Dirección pública de la aplicación, para los enlaces de los correos; sin ella el correo no lleva enlace | **Sí** |
+| `Correo:CarpetaSalida` | `App_Data/correo` | Destino del modo Carpeta | No |
+| `Correo:MaximoIntentos` / `MinutosReintento` | `5` / `5` | Reintentos; la espera se duplica en cada intento (5, 10, 20…) | Opcional |
+| `Correo:SegundosEntreEnvios` / `MinutosArriendo` | `30` / `10` | Frecuencia del envío (`0` lo apaga) y tiempo antes de retomar un envío que quedó a medias | Opcional |
+| `Correo:Plantillas:<Evento>:Asunto` / `Cuerpo` | texto en español | Reemplazo de plantilla. Eventos: `TareaAsignada`, `Rechazada`, `Publicada`, `AprobacionRevocada`, `VigenciaReprogramada`. Marcadores: `{Destinatario}`, `{Codigo}`, `{Etiqueta}`, `{Titulo}`, `{Enlace}`, `{EnlaceVisor}`; según el evento también `{Etapa}`, `{TipoEtapa}`, `{Autor}`, `{Actor}`, `{Motivo}`, `{Fecha}`. Un marcador desconocido queda visible en el correo | Opcional |
 | `Desarrollo:Personas` | 6 personas (solo `appsettings.Development.json`) | Usuarios simulados | No aplica |
 
 Ejemplos de variables de entorno:
@@ -555,7 +583,7 @@ SELECT name FROM sys.databases WHERE name LIKE 'DocLibrary[_]%';   -- borrar las
 | Grupos de AD | Nombres reales para `Autorizacion:Grupos` |
 | SQL Server | Instancia, base, cuenta de servicio de la aplicación. **Confirmar que la versión del servidor es compatible**: el sistema solo se ha probado contra LocalDB de SQL Server 2025 (EF Core 10 permite fijar el nivel de compatibilidad si el servidor es anterior) |
 | Almacén de archivos | Ruta (local o UNC), cuenta con permisos de lectura/escritura, **respaldo coordinado con la BD** |
-| SMTP | Servidor y remitente (para la Fase 4) |
+| SMTP | Servidor, puerto, seguridad (TLS), credenciales si las exige, **remitente autorizado** (SPF/relay), convención de direcciones (`PatronCorreo`) y `UrlBase` pública. Probar un envío real antes de activar `Correo:Modo = Smtp` |
 | Catálogo inicial | Áreas, abreviaturas, tipos, flujos, dueños de área |
 | Criterios de "revisión menor" | Calidad debe validar qué cuenta como corrección editorial (el sistema solo exige una declaración) |
 
@@ -635,12 +663,18 @@ Decisiones tomadas y su razón. El detalle completo y cronológico está en `doc
 | **Páginas de consulta estáticas** (GET) | URL compartibles, sin circuito, baratas | Sin filtros dependientes en vivo (p. ej. subárea según el área) |
 | **Fechas en hora del servidor** | Una sola planta | No apto para varias zonas horarias |
 | **`TareasDeFondo` en el mismo proceso** | Sin infraestructura extra | Se detienen con el proceso; sin reintentos persistentes |
+| **Cola de correo en BD**, encolada en la misma transacción del cambio | Si la operación falla no sale un correo falso; si se confirma, el aviso no se pierde aunque el SMTP esté caído | Entrega *al-menos-una-vez*; el envío es asíncrono (retraso de hasta `SegundosEntreEnvios`) |
+| **Dirección de correo resuelta al enviar** (capturada > convención) | Corregir una dirección arregla también los reintentos | Si cambia la convención, cambian los destinos de lo pendiente |
+| **Quien actúa no recibe aviso de su propia acción** | Evita ruido (el Administrador que anula no necesita un correo) | Un Administrador que es también autor no se entera por correo de lo que hizo él mismo |
+| **Correo `Desactivado` por defecto** | Un despliegue sin configurar no envía nada ni acumula cola | Hay que activarlo explícitamente |
 
 ### Limitaciones conocidas
 
 - SSO Windows no verificado de extremo a extremo; sin Entra ID.
-- Sin correos, alertas ni vencimientos (Fase 4).
-- **Sin pantalla de consulta de la bitácora** (solo SQL directo sobre `Auditoria`).
+- Correo (4A): entrega *al-menos-una-vez* (en un fallo a mitad de envío podría duplicarse, no perderse); texto plano,
+  sin adjuntos ni resumen diario; probado solo contra un SMTP de prueba local.
+- Sin alertas ni estado «Vencido» (4B).
+- **Sin pantalla de consulta de la bitácora** (solo SQL directo sobre `Auditoria`; 4C).
 - Sin pruebas de interfaz en navegador.
 - Exportación limitada a 5,000 filas; texto de PDF limitado a 2 millones de caracteres.
 - `/health` no comprueba la BD ni el almacén.
@@ -657,17 +691,15 @@ Decisiones tomadas y su razón. El detalle completo y cronológico está en `doc
 
 ### Plan comprometido
 
-**Fase 4 — Alertas y reportes**
-- Vencimiento de la revisión periódica: alertas a **30 y 7 días**, estado **"Vencido"** (el documento *sigue vigente*, se marca y
-  se reporta), escalamiento al responsable y al jefe de área.
-- Acción *"Revisado sin cambios"* (extiende el vencimiento sin nueva revisión, con aprobación y bitácora) o abrir revisión nueva.
-- Cola de correo en BD con reintentos (SMTP) y plantillas en español; avisos de tarea asignada, rechazo, publicación,
-  vencimiento y escalamiento.
-- Reportes: documentos vencidos/por vencer, tareas pendientes por usuario, historial de revisiones por documento.
-- Reaprovecha `TareasDeFondo` y `FechaProximaRevisionUtc`, que ya existen.
-
-**Pendiente de asignar a una fase:** pantalla de consulta de la bitácora (requerimiento 7.6: Auditor y Administrador, con
-filtros y exportación). Los datos ya se registran; falta la pantalla.
+**Fase 4 — Alertas y reportes** (en tres tramos)
+- **4A — Correo (construido):** cola en BD con reintentos, plantillas en español, SMTP/carpeta; avisos de tarea asignada,
+  rechazo, publicación, aprobación anulada y vigencia reprogramada; pantallas de usuarios y de cola.
+- **4B — Vencimientos:** alertas a **30 y 7 días** al responsable; estado **«Vencido»** (el documento *sigue vigente*) con
+  escalamiento al **dueño del área** (si no hay, a los Administradores); acción *«Revisado sin cambios»* propuesta por el
+  responsable y aprobada por el dueño en una etapa (extiende el vencimiento, con bitácora); aviso de vigencia diferida próxima.
+  Idempotente por `Notificacion.Clave`. Reaprovecha `TareasDeFondo` y `FechaProximaRevisionUtc`.
+- **4C — Reportes:** vencidos/por vencer, tareas pendientes por usuario, historial de revisiones por documento, **pantalla de
+  consulta de la bitácora** (Auditor/Administrador, filtros y exportación) y **cambio de responsable** por el Administrador.
 
 **Fase 5 — Pruebas y endurecimiento**
 - Revisión de seguridad (OWASP Top 10): cabeceras/CSP, *rate limiting*, validación de carga de archivos.

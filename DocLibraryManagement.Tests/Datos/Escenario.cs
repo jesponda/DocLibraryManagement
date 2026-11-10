@@ -2,12 +2,14 @@ using DocLibraryManagement.Application.Archivos;
 using DocLibraryManagement.Application.Catalogo;
 using DocLibraryManagement.Application.Comun;
 using DocLibraryManagement.Application.Consulta;
+using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Application.Flujo;
 using DocLibraryManagement.Application.Usuarios;
 using DocLibraryManagement.Domain;
 using DocLibraryManagement.Infrastructure;
 using DocLibraryManagement.Infrastructure.Persistencia;
+using DocLibraryManagement.Tests.Correo;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,25 +26,52 @@ public sealed class Escenario : IDisposable
     private readonly ServiceProvider _sp;
     private readonly IServiceScope _scope;
 
-    public Escenario(BaseDatosFixture bd, int tamanoMaximoMb = 50)
+    /// <param name="correo">
+    /// Activa el correo con un remitente falso (<see cref="CorreoSalida"/>). Por defecto está DESACTIVADO, como en la
+    /// configuración real, así que las pruebas que no lo piden no generan notificaciones.
+    /// </param>
+    /// <param name="extra">Claves de configuración adicionales o que reemplazan a las del escenario.</param>
+    /// <param name="remitenteReal">No sustituye el remitente: usa el que corresponda al <c>Correo:Modo</c> (para probar SMTP de verdad).</param>
+    public Escenario(BaseDatosFixture bd, int tamanoMaximoMb = 50, bool correo = false, IReadOnlyDictionary<string, string?>? extra = null, bool remitenteReal = false)
     {
         Bd = bd;
         Reloj = new FakeTimeProvider(new DateTimeOffset(2026, 11, 5, 8, 0, 0, TimeSpan.Zero));
         RutaArchivos = Path.Combine(Path.GetTempPath(), "doclib-tests", Guid.NewGuid().ToString("N"));
 
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:DefaultConnection"] = bd.Conexion,
-                ["Archivos:RutaBase"] = RutaArchivos,
-                ["Archivos:TamanoMaximoMb"] = tamanoMaximoMb.ToString(),
-            })
-            .Build();
+        var valores = new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = bd.Conexion,
+            ["Archivos:RutaBase"] = RutaArchivos,
+            ["Archivos:TamanoMaximoMb"] = tamanoMaximoMb.ToString(),
+        };
+
+        if (correo)
+        {
+            valores["Correo:Modo"] = "Carpeta";
+            valores["Correo:CarpetaSalida"] = Path.Combine(RutaArchivos, "correo");
+            valores["Correo:Remitente"] = "documentos@planta.test";
+            valores["Correo:PatronCorreo"] = "{usuario}@planta.test";
+            valores["Correo:UrlBase"] = "https://docs.test";
+            valores["Correo:MinutosReintento"] = "5";
+            valores["Correo:MaximoIntentos"] = "3";
+            valores["Correo:MinutosArriendo"] = "10";
+        }
+
+        foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
+        {
+            valores[clave] = valor;
+        }
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection(valores).Build();
 
         var services = new ServiceCollection();
         services.AddLogging(); // el host real lo trae; este contenedor mínimo no
         services.AddInfrastructure(config);
         services.AddSingleton<TimeProvider>(Reloj);
+        if (!remitenteReal)
+        {
+            services.AddSingleton<ICorreoSender>(CorreoSalida); // sustituye al de carpeta/SMTP: nada sale de verdad
+        }
         _sp = services.BuildServiceProvider();
         _scope = _sp.CreateScope();
     }
@@ -58,6 +87,24 @@ public sealed class Escenario : IDisposable
     public IUsuarioSincronizador Usuarios => _scope.ServiceProvider.GetRequiredService<IUsuarioSincronizador>();
 
     public IRevisionService Revisiones => _scope.ServiceProvider.GetRequiredService<IRevisionService>();
+
+    /// <summary>El remitente falso al que van todos los correos del escenario.</summary>
+    public CorreoFalso CorreoSalida { get; } = new();
+
+    public IColaCorreoService Cola => _scope.ServiceProvider.GetRequiredService<IColaCorreoService>();
+
+    public IUsuariosService UsuariosAdmin => _scope.ServiceProvider.GetRequiredService<IUsuariosService>();
+
+    /// <summary>Procesa la cola con un tope alto: las notificaciones de otras pruebas de la clase no la deben acaparar.</summary>
+    public Task<int> ProcesarColaAsync() => Cola.ProcesarPendientesAsync(maximo: 5000);
+
+    /// <summary>Todas las notificaciones de un documento, de la más antigua a la más nueva.</summary>
+    public async Task<List<Notificacion>> NotificacionesDeAsync(string codigoDocumento)
+    {
+        await using var db = Db();
+        return await db.Notificaciones.AsNoTracking().Include(n => n.Destinatario)
+            .Where(n => n.CodigoDocumento == codigoDocumento).OrderBy(n => n.Id).ToListAsync();
+    }
 
     public IConsultaService Consulta() => _scope.ServiceProvider.GetRequiredService<IConsultaService>();
 

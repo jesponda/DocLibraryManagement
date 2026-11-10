@@ -80,6 +80,10 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
             $"Server=(localdb)\\mssqllocaldb;Database={_baseDatos};Trusted_Connection=True");
         builder.UseSetting("Archivos:RutaBase", _carpetaArchivos);
         builder.UseSetting("TareasDeFondo:MinutosEntreEjecuciones", "0"); // sin proceso de fondo: las pruebas controlan cuándo corre
+        // appsettings.Development.json activa el modo Carpeta; aquí se apaga para que las pruebas web no escriban .eml
+        // en la carpeta de la aplicación ni arranque el envío en segundo plano.
+        builder.UseSetting("Correo:Modo", "Desactivado");
+        builder.UseSetting("Correo:SegundosEntreEnvios", "0");
     }
 
     /// <summary>Cliente que conserva cookies (sesión) y NO sigue redirecciones, para ver cada respuesta tal cual.</summary>

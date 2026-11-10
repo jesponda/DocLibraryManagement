@@ -2,8 +2,8 @@
 
 | Campo | Valor |
 |---|---|
-| Versión del documento | 1.7 |
-| Fecha | 2026-11-05 |
+| Versión del documento | 1.8 |
+| Fecha | 2026-11-10 |
 | Estado | Aprobado para iniciar Fase 1 |
 | Norma base | ISO 9001:2015 cláusula 7.5 (Información documentada), estructura Annex SL |
 
@@ -297,10 +297,41 @@ retirar el documento completo. Se agregó, **solo para el Administrador y con mo
 - Migración `MotivoCierreFlujo` (una columna nula).
 
 ### Fase 4 – Alertas y reportes
+Se entrega en tres tramos: **4A** correo, **4B** vencimientos, **4C** reportes.
 - Jobs de vigencia diferida y vencimientos (7.4), escalamiento.
 - Cola de correo y plantillas (7.8).
 - Reportes: documentos vencidos/por vencer, tareas pendientes por usuario, historial de revisiones por documento.
 - **Aceptación:** con reloj simulado, se generan las alertas a 30 y 7 días, el estado "Vencido" y el escalamiento.
+
+#### Tramo 4A – Correo *(construido, pendiente de validar)*
+Decisiones:
+- **Cola en BD** (`Notificaciones`): estados Pendiente / Procesando / Enviado / Error, con reintentos de espera exponencial
+  (`MinutosReintento` × 2^(n−1), hasta `MaximoIntentos`). El aviso se encola **en la misma transacción** que el cambio de negocio
+  (si la operación falla no queda correo; si se confirma, el correo no se pierde). Un `BackgroundService` independiente envía.
+- **Entrega al-menos-una-vez:** se reserva con `RowVersion` y un arriendo (`MinutosArriendo`); si un proceso muere a mitad del
+  envío, otro la retoma al vencer el arriendo. Un correo podría duplicarse en ese caso extremo; nunca perderse.
+- **Tres modos** (`Correo:Modo`): `Desactivado` (predeterminado: no encola nada), `Carpeta` (archivos `.eml`, para desarrollo)
+  y `Smtp` (MailKit). 
+- **Dirección del destinatario:** correo capturado por el Administrador > convención configurable `PatronCorreo`
+  (p. ej. `{usuario}@empresa.com`) > sin correo. Se resuelve **al enviar**, no al encolar, para que corregir una dirección
+  arregle también los reintentos. Pantalla `/administracion/usuarios` para capturarlo.
+- **Plantillas en español** con reemplazo por configuración (`Correo:Plantillas:<Evento>:Asunto|Cuerpo`); un marcador
+  desconocido queda visible en el correo. El asunto se normaliza a una línea (sin inyección de cabeceras) y se recorta a 200.
+- **Eventos de este tramo:** tarea asignada (al iniciar, al aprobar una etapa —avisa a la siguiente—, al reasignar), rechazo
+  (al autor), publicación (al autor y al responsable) , aprobación anulada y vigencia reprogramada. **Quien ejecuta la acción
+  no recibe aviso de su propia acción.** Personas desactivadas no reciben avisos.
+- Pantalla `/administracion/correo` (solo Administrador): cola con filtro, último error y *Reintentar* para las en Error
+  (queda en la bitácora). Avisa claramente cuando el modo es `Desactivado`.
+
+#### Tramo 4B – Vencimientos *(pendiente)*
+Alertas a 30 y 7 días al responsable; estado derivado «Vencido» (el documento sigue Vigente) con escalamiento al **dueño del
+área** (si no hay, a los Administradores); «Revisado sin cambios» propuesto por el responsable con comentario y aprobado por el
+dueño en una sola etapa, que extiende el vencimiento; aviso de vigencia diferida próxima. Idempotente por `Notificacion.Clave`.
+
+#### Tramo 4C – Reportes *(pendiente)*
+Vencidos y por vencer, tareas pendientes por usuario, historial de revisiones por documento, **pantalla de consulta de la
+bitácora** (Auditor/Administrador, con filtros y exportación) y **cambio de responsable** de un documento por el Administrador
+(motivo obligatorio y bitácora).
 
 ### Fase 5 – Pruebas y endurecimiento
 - Revisión de seguridad, pruebas de integración, datos de ejemplo, script de despliegue y guía de operación.
@@ -359,6 +390,7 @@ Pendientes de datos reales (no bloquean la Fase 1, bloquean la puesta en producc
 | 1.5 | 2026-11-05 | Tramo 2C construido (publicación automática, vigencia diferida, revisiones mayor/menor, dueño de área, descarte de borradores, retiro). Se adelanta un proceso de fondo mínimo para la activación diferida. |
 | 1.6 | 2026-11-09 | Fase 3 construida (lista maestra con exportación, búsqueda por contenido, visor y enlace estable). La búsqueda no usa SQL Server Full-Text porque el LocalDB de desarrollo no lo incluye. `ActivadorDeVigencias` pasa a `TareasDeFondo`. |
 | 1.7 | 2026-11-09 | Fase 3 validada. Ajuste: el Administrador puede cambiar la fecha o anular (devolver a borrador) una aprobación que aún no entra en vigor. Nuevo estado de flujo `Revocado`. |
+| 1.8 | 2026-11-10 | Fase 4 dividida en tramos 4A/4B/4C. Tramo 4A construido: cola de correo en BD con reintentos, plantillas, modos Desactivado/Carpeta/Smtp, avisos de los eventos existentes y pantallas de usuarios y de cola. |
 
 ## 14. Referencias
 

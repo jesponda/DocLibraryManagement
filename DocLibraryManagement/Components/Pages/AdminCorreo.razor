@@ -1,0 +1,161 @@
+@page "/administracion/correo"
+@attribute [Authorize(Policy = Politicas.PuedeAdministrar)]
+@rendermode InteractiveServer
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Consulta
+@using DocLibraryManagement.Application.Correo
+@using DocLibraryManagement.Domain
+@using Microsoft.Extensions.Options
+@inject IColaCorreoService Cola
+@inject IOptions<CorreoOptions> OpcionesCorreo
+
+<PageTitle>Cola de correo</PageTitle>
+
+<h1>Cola de correo</h1>
+<p><a href="administracion">← Administración</a></p>
+
+<Mensajes Error="@Error" Exito="@Exito" />
+
+@if (OpcionesCorreo.Value.Modo == ModoCorreo.Desactivado)
+{
+    <div class="alert alert-warning" style="max-width: 50rem">
+        <strong>El correo está desactivado</strong> (<code>Correo:Modo = Desactivado</code>): el sistema no encola ni envía avisos.
+        Para activarlo configura <code>Correo:Modo</code> como <code>Smtp</code> (o <code>Carpeta</code> para pruebas) y reinicia la aplicación.
+    </div>
+}
+else
+{
+    <p class="text-muted">
+        Modo: <strong>@OpcionesCorreo.Value.Modo</strong>.
+        Un correo que falla se reintenta @OpcionesCorreo.Value.MaximoIntentos veces con espera creciente; si no sale, queda en <em>Error</em> y puedes reintentarlo.
+    </p>
+}
+
+<div class="mb-3" style="max-width: 20rem">
+    <label class="form-label" for="estado">Estado</label>
+    <select id="estado" class="form-select" value="@filtro" @onchange="CambiarFiltroAsync">
+        <option value="">Todos</option>
+        <option value="@((int)EstadoNotificacion.Pendiente)">Pendientes</option>
+        <option value="@((int)EstadoNotificacion.Procesando)">Enviándose</option>
+        <option value="@((int)EstadoNotificacion.Enviado)">Enviados</option>
+        <option value="@((int)EstadoNotificacion.Error)">En error</option>
+    </select>
+</div>
+
+@if (pagina is null)
+{
+    <p>Cargando…</p>
+}
+else if (pagina.Elementos.Count == 0)
+{
+    <p class="text-muted">No hay correos con ese estado.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>#</th><th>Evento</th><th>Para</th><th>Asunto</th><th>Estado</th><th>Intentos</th><th>Detalle</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var n in pagina.Elementos)
+        {
+            <tr>
+                <td>@n.Id</td>
+                <td>@n.Tipo</td>
+                <td>@n.Destinatario<br /><span class="text-muted small">@(n.Correo ?? "sin correo")</span></td>
+                <td>@n.Asunto</td>
+                <td><span class="badge text-bg-@Color(n.Estado)">@Nombre(n.Estado)</span></td>
+                <td>@n.Intentos</td>
+                <td class="small">
+                    @if (n.Estado == EstadoNotificacion.Enviado)
+                    {
+                        <span>Enviado @n.FechaEnvioUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                    }
+                    else if (n.Estado == EstadoNotificacion.Pendiente)
+                    {
+                        <span>Próximo intento @n.ProximoIntentoUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                    }
+                    @if (!string.IsNullOrEmpty(n.UltimoError))
+                    {
+                        <div class="text-danger">@n.UltimoError</div>
+                    }
+                </td>
+                <td>
+                    @if (n.Estado == EstadoNotificacion.Error)
+                    {
+                        <button class="btn btn-sm btn-outline-primary" @onclick="() => ReintentarAsync(n.Id)">Reintentar</button>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+
+    @if (pagina.TotalPaginas > 1)
+    {
+        <nav aria-label="Páginas">
+            <ul class="pagination pagination-sm">
+                <li class="page-item @(pagina.PaginaActual <= 1 ? "disabled" : "")">
+                    <button class="page-link" @onclick="() => IrAsync(pagina.PaginaActual - 1)">Anterior</button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Página @pagina.PaginaActual de @pagina.TotalPaginas</span></li>
+                <li class="page-item @(pagina.PaginaActual >= pagina.TotalPaginas ? "disabled" : "")">
+                    <button class="page-link" @onclick="() => IrAsync(pagina.PaginaActual + 1)">Siguiente</button>
+                </li>
+            </ul>
+        </nav>
+    }
+}
+
+@code {
+    private Pagina<NotificacionDto>? pagina;
+    private string filtro = "";
+    private int numero = 1;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private EstadoNotificacion? Estado =>
+        int.TryParse(filtro, out var v) && Enum.IsDefined((EstadoNotificacion)v) ? (EstadoNotificacion)v : null;
+
+    private async Task CargarAsync()
+    {
+        await EjecutarAsync(async a => pagina = await Cola.ListarAsync(a, Estado, numero));
+    }
+
+    private async Task CambiarFiltroAsync(ChangeEventArgs e)
+    {
+        filtro = e.Value?.ToString() ?? "";
+        numero = 1;
+        await CargarAsync();
+    }
+
+    private async Task IrAsync(int destino)
+    {
+        numero = Math.Max(1, destino);
+        await CargarAsync();
+    }
+
+    private async Task ReintentarAsync(long id)
+    {
+        if (await EjecutarAsync(a => Cola.ReintentarAsync(a, id), "La notificación volvió a la cola."))
+        {
+            await CargarAsync();
+            Exito ??= "La notificación volvió a la cola.";
+        }
+    }
+
+    private static string Nombre(EstadoNotificacion e) => e switch
+    {
+        EstadoNotificacion.Pendiente => "Pendiente",
+        EstadoNotificacion.Procesando => "Enviándose",
+        EstadoNotificacion.Enviado => "Enviado",
+        EstadoNotificacion.Error => "Error",
+        _ => e.ToString(),
+    };
+
+    private static string Color(EstadoNotificacion e) => e switch
+    {
+        EstadoNotificacion.Enviado => "success",
+        EstadoNotificacion.Error => "danger",
+        EstadoNotificacion.Procesando => "info",
+        _ => "secondary",
+    };
+}

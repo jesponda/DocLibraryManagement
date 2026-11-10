@@ -1,4 +1,5 @@
 using DocLibraryManagement.Application.Archivos;
+using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Components;
 using DocLibraryManagement.Infrastructure;
 using DocLibraryManagement.Infrastructure.Persistencia;
@@ -21,6 +22,15 @@ builder.Services.PostConfigure<ArchivosOptions>(o =>
     if (string.IsNullOrWhiteSpace(o.RutaBase))
     {
         o.RutaBase = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "archivos");
+    }
+});
+
+// El modo Carpeta (desarrollo) deja los correos como .eml en App_Data/correo, junto a la aplicación.
+builder.Services.PostConfigure<CorreoOptions>(o =>
+{
+    if (string.IsNullOrWhiteSpace(o.CarpetaSalida))
+    {
+        o.CarpetaSalida = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "correo");
     }
 });
 

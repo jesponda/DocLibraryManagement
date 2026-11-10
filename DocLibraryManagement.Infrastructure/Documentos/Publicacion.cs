@@ -1,6 +1,8 @@
 using DocLibraryManagement.Application.Comun;
+using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Domain;
+using DocLibraryManagement.Infrastructure.Correo;
 using DocLibraryManagement.Infrastructure.Persistencia;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,6 +23,7 @@ internal static class Publicacion
     public static async Task PublicarAsync(
         AppDbContext db,
         TimeProvider reloj,
+        IEncoladorNotificaciones notificador,
         Actor actor,
         RevisionDocumento nueva,
         string codigoDocumento,
@@ -50,6 +53,17 @@ internal static class Publicacion
         nueva.FechaProximaRevisionUtc = ReglasRevision.ProximaRevision(vigenciaUtc, mesesRevision);
         Bitacora.Registrar(db, reloj, actor, "Revision.Publicar", nameof(Documento), codigoDocumento,
             nuevo: $"{nueva.Etiqueta} Vigente desde {vigenciaUtc:yyyy-MM-dd HH:mm} UTC; próxima revisión {nueva.FechaProximaRevisionUtc:yyyy-MM-dd}");
+
+        // Avisan el responsable del documento y el autor de la revisión (una sola vez si son la misma persona), sin
+        // avisarle a quien ejecutó la acción. Va en esta misma transacción: si algo falla, no sale ningún correo.
+        var valores = notificador.ValoresBase(nueva.Documento!, nueva.Etiqueta);
+        valores["Fecha"] = notificador.Fecha(vigenciaUtc);
+        valores["Enlace"] = valores["EnlaceVisor"];
+        foreach (var destinatario in new[] { nueva.Documento!.ResponsableId, nueva.AutorId }.Distinct())
+        {
+            await notificador.EncolarAsync(db, EventosCorreo.Publicada, destinatario, valores, codigoDocumento,
+                omitirIdentificador: actor.Identificador, ct: ct);
+        }
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);

@@ -2,8 +2,10 @@ using System.Security.Cryptography;
 using DocLibraryManagement.Application.Archivos;
 using DocLibraryManagement.Application.Comun;
 using DocLibraryManagement.Application.Consulta;
+using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Domain;
+using DocLibraryManagement.Infrastructure.Correo;
 using DocLibraryManagement.Infrastructure.Persistencia;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -15,6 +17,7 @@ internal sealed class RevisionService(
     IFileStore almacen,
     IOptions<ArchivosOptions> opciones,
     IExtractorTexto extractor,
+    IEncoladorNotificaciones notificador,
     TimeProvider reloj) : IRevisionService
 {
     private const int MaximoMotivo = 1000;
@@ -389,6 +392,17 @@ internal sealed class RevisionService(
             anterior: $"{r.Etiqueta} entraba en vigor el {anterior:yyyy-MM-dd HH:mm} UTC",
             nuevo: $"{r.Etiqueta} entrará en vigor el {vigencia:yyyy-MM-dd HH:mm} UTC", comentario: texto);
 
+        // Avisan el autor de la revisión y el responsable del documento (una vez si son la misma persona), menos quien actuó.
+        var valores = notificador.ValoresBase(r.Documento, r.Etiqueta);
+        valores["Actor"] = await notificador.NombreVisibleAsync(db, actor.Identificador, ct);
+        valores["Fecha"] = notificador.Fecha(vigencia);
+        valores["Motivo"] = texto;
+        foreach (var destinatario in new[] { r.AutorId, r.Documento.ResponsableId }.Distinct())
+        {
+            await notificador.EncolarAsync(db, EventosCorreo.VigenciaReprogramada, destinatario, valores, r.Documento.Codigo,
+                omitirIdentificador: actor.Identificador, ct: ct);
+        }
+
         await GuardarAsync(db, ct);
     }
 
@@ -419,6 +433,13 @@ internal sealed class RevisionService(
         Bitacora.Registrar(db, reloj, actor, "Revision.RevocarAprobacion", nameof(Documento), r.Documento!.Codigo,
             anterior: $"{r.Etiqueta} Aprobado (entraba en vigor el {programada:yyyy-MM-dd HH:mm} UTC)",
             nuevo: $"{r.Etiqueta} Borrador; envío #{flujo.Numero} revocado", comentario: texto);
+
+        // El autor debe enterarse: la revisión volvió a sus manos y tiene que corregirla y reenviarla.
+        var valores = notificador.ValoresBase(r.Documento, r.Etiqueta);
+        valores["Actor"] = await notificador.NombreVisibleAsync(db, actor.Identificador, ct);
+        valores["Motivo"] = texto;
+        await notificador.EncolarAsync(db, EventosCorreo.AprobacionRevocada, r.AutorId, valores, r.Documento.Codigo,
+            omitirIdentificador: actor.Identificador, ct: ct);
 
         await GuardarAsync(db, ct);
     }

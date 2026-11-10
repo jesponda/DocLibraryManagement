@@ -1,6 +1,7 @@
 using DocLibraryManagement.Application.Comun;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Domain;
+using DocLibraryManagement.Infrastructure.Correo;
 using DocLibraryManagement.Infrastructure.Persistencia;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,7 @@ namespace DocLibraryManagement.Infrastructure.Documentos;
 internal sealed class PublicacionService(
     IDbContextFactory<AppDbContext> fabrica,
     TimeProvider reloj,
+    IEncoladorNotificaciones notificador,
     ILogger<PublicacionService> log) : IPublicacionService
 {
     public async Task<int> ActivarPendientesAsync(CancellationToken ct = default)
@@ -62,7 +64,7 @@ internal sealed class PublicacionService(
         try
         {
             // Se usa la fecha PROGRAMADA (lo prometido), no la hora en que el proceso alcanzó a correr.
-            await Publicacion.PublicarAsync(db, reloj, Actor.Sistema, r, r.Documento.Codigo, r.Documento.TipoDocumento!.MesesRevision, vigencia, ct);
+            await Publicacion.PublicarAsync(db, reloj, notificador, Actor.Sistema, r, r.Documento.Codigo, r.Documento.TipoDocumento!.MesesRevision, vigencia, ct);
             return true;
         }
         catch (DbUpdateConcurrencyException)

@@ -1,0 +1,111 @@
+@page "/administracion/usuarios"
+@attribute [Authorize(Policy = Politicas.PuedeAdministrar)]
+@rendermode InteractiveServer
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Correo
+@using Microsoft.Extensions.Options
+@inject IUsuariosService Usuarios
+@inject IOptions<CorreoOptions> OpcionesCorreo
+
+<PageTitle>Usuarios y correos</PageTitle>
+
+<h1>Usuarios y correos</h1>
+<p><a href="administracion">← Administración</a></p>
+
+<Mensajes Error="@Error" Exito="@Exito" />
+
+<p style="max-width: 50rem">
+    Los avisos por correo se mandan a la dirección <strong>capturada aquí</strong>; si un usuario no tiene una, se arma con la
+    convención @(string.IsNullOrWhiteSpace(OpcionesCorreo.Value.PatronCorreo)
+        ? "(no hay convención configurada: solo reciben correo quienes tengan una dirección capturada)"
+        : $"«{OpcionesCorreo.Value.PatronCorreo}»").
+    Aparecen aquí quienes ya han entrado al sistema.
+</p>
+
+@if (usuarios is null)
+{
+    <p>Cargando…</p>
+}
+else if (usuarios.Count == 0)
+{
+    <p class="text-muted">Todavía no ha entrado nadie al sistema.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Nombre</th><th>Usuario</th><th>Roles (último acceso)</th><th>Correo</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var u in usuarios)
+        {
+            <tr class="@(u.Activo ? "" : "text-muted")">
+                <td>@u.NombreVisible</td>
+                <td><code>@u.Identificador</code></td>
+                <td>@u.Roles</td>
+                <td>
+                    @if (editando == u.Id)
+                    {
+                        <div class="input-group input-group-sm" style="max-width: 24rem">
+                            <input class="form-control" maxlength="256" placeholder="nombre@empresa.com" aria-label="Correo de @u.NombreVisible" @bind="correoEditado" />
+                            <button class="btn btn-primary" @onclick="() => GuardarAsync(u.Id, correoEditado)">Guardar</button>
+                            <button class="btn btn-outline-secondary" @onclick="() => editando = null">Cancelar</button>
+                        </div>
+                    }
+                    else if (u.CorreoEfectivo is null)
+                    {
+                        <span class="text-danger">Sin correo</span>
+                    }
+                    else
+                    {
+                        @u.CorreoEfectivo
+                        <span class="badge text-bg-@(u.Origen == OrigenCorreo.Explicito ? "primary" : "secondary") ms-1">
+                            @(u.Origen == OrigenCorreo.Explicito ? "capturado" : "convención")
+                        </span>
+                    }
+                </td>
+                <td class="text-nowrap">
+                    @if (editando != u.Id)
+                    {
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => Editar(u)">Editar</button>
+                        @if (u.CorreoExplicito is not null)
+                        {
+                            <button class="btn btn-sm btn-link" @onclick="() => GuardarAsync(u.Id, null)">Usar convención</button>
+                        }
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<UsuarioDto>? usuarios;
+    private Guid? editando;
+    private string correoEditado = "";
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        await EjecutarAsync(async a => usuarios = await Usuarios.ListarAsync(a));
+        usuarios ??= [];
+    }
+
+    private void Editar(UsuarioDto u)
+    {
+        editando = u.Id;
+        correoEditado = u.CorreoExplicito ?? u.CorreoEfectivo ?? "";
+        Error = Exito = null;
+    }
+
+    private async Task GuardarAsync(Guid id, string? correo)
+    {
+        if (await EjecutarAsync(a => Usuarios.EstablecerCorreoAsync(a, id, correo),
+                string.IsNullOrWhiteSpace(correo) ? "Se quitó el correo capturado: se usará la convención." : "Correo guardado."))
+        {
+            editando = null;
+            await CargarAsync();
+            Exito ??= "Correo actualizado.";
+        }
+    }
+}

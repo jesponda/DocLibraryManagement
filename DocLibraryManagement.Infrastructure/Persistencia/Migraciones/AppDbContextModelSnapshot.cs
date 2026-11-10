@@ -228,6 +228,78 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.ToTable("InstanciasFlujo", (string)null);
                 });
 
+            modelBuilder.Entity("DocLibraryManagement.Domain.Notificacion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Asunto")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Clave")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CodigoDocumento")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Cuerpo")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("DestinatarioId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("FechaCreacionUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaEnvioUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Intentos")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ProximoIntentoUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("UltimoError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Clave")
+                        .IsUnique()
+                        .HasFilter("[Clave] IS NOT NULL");
+
+                    b.HasIndex("DestinatarioId");
+
+                    b.HasIndex("Estado", "ProximoIntentoUtc");
+
+                    b.ToTable("Notificaciones", (string)null);
+                });
+
             modelBuilder.Entity("DocLibraryManagement.Domain.PasoInstancia", b =>
                 {
                     b.Property<int>("Id")
@@ -607,6 +679,17 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.Navigation("IniciadoPor");
 
                     b.Navigation("Revision");
+                });
+
+            modelBuilder.Entity("DocLibraryManagement.Domain.Notificacion", b =>
+                {
+                    b.HasOne("DocLibraryManagement.Domain.Usuario", "Destinatario")
+                        .WithMany()
+                        .HasForeignKey("DestinatarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Destinatario");
                 });
 
             modelBuilder.Entity("DocLibraryManagement.Domain.PasoInstancia", b =>

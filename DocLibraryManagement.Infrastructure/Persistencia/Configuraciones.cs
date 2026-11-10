@@ -181,6 +181,30 @@ internal sealed class PasoInstanciaConfig : IEntityTypeConfiguration<PasoInstanc
     }
 }
 
+internal sealed class NotificacionConfig : IEntityTypeConfiguration<Notificacion>
+{
+    public void Configure(EntityTypeBuilder<Notificacion> b)
+    {
+        b.ToTable("Notificaciones");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.RowVersion).IsRowVersion();
+        b.Property(x => x.Tipo).HasMaxLength(50).IsRequired();
+        b.Property(x => x.Asunto).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Cuerpo).IsRequired();
+        b.Property(x => x.CodigoDocumento).HasMaxLength(30);
+        b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.UltimoError).HasMaxLength(1000);
+        b.Property(x => x.Clave).HasMaxLength(200);
+        b.HasOne(x => x.Destinatario).WithMany().HasForeignKey(x => x.DestinatarioId).OnDelete(DeleteBehavior.Restrict);
+
+        // La consulta del envío: «lo que está listo y ya le toca», en orden.
+        b.HasIndex(x => new { x.Estado, x.ProximoIntentoUtc });
+
+        // Idempotencia: una misma clave no puede encolarse dos veces (avisos periódicos).
+        b.HasIndex(x => x.Clave).IsUnique().HasFilter("[Clave] IS NOT NULL");
+    }
+}
+
 internal sealed class EventoAuditoriaConfig : IEntityTypeConfiguration<EventoAuditoria>
 {
     public void Configure(EntityTypeBuilder<EventoAuditoria> b)
