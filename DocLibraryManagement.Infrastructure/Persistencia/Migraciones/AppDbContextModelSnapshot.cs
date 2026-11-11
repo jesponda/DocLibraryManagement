@@ -475,6 +475,69 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.ToTable("Revisiones");
                 });
 
+            modelBuilder.Entity("DocLibraryManagement.Domain.SolicitudSinCambios", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Comentario")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ComentarioDecision")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("DecididaPorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("FechaDecisionUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("FechaProximaAnteriorUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaProximaNuevaUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("FechaSolicitudUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RevisionId")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SolicitanteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DecididaPorId");
+
+                    b.HasIndex("SolicitanteId");
+
+                    b.HasIndex(new[] { "RevisionId" }, "IX_SolicitudesSinCambios_RevisionId");
+
+                    b.HasIndex(new[] { "RevisionId" }, "UX_SinCambios_UnicaPendiente")
+                        .IsUnique()
+                        .HasFilter("[Estado] = 'Pendiente'");
+
+                    b.ToTable("SolicitudesSinCambios", (string)null);
+                });
+
             modelBuilder.Entity("DocLibraryManagement.Domain.SubArea", b =>
                 {
                     b.Property<int>("Id")
@@ -746,6 +809,32 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.Navigation("Autor");
 
                     b.Navigation("Documento");
+                });
+
+            modelBuilder.Entity("DocLibraryManagement.Domain.SolicitudSinCambios", b =>
+                {
+                    b.HasOne("DocLibraryManagement.Domain.Usuario", "DecididaPor")
+                        .WithMany()
+                        .HasForeignKey("DecididaPorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("DocLibraryManagement.Domain.RevisionDocumento", "Revision")
+                        .WithMany()
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DocLibraryManagement.Domain.Usuario", "Solicitante")
+                        .WithMany()
+                        .HasForeignKey("SolicitanteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DecididaPor");
+
+                    b.Navigation("Revision");
+
+                    b.Navigation("Solicitante");
                 });
 
             modelBuilder.Entity("DocLibraryManagement.Domain.SubArea", b =>

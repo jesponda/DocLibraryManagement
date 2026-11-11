@@ -6,6 +6,7 @@ using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Application.Flujo;
 using DocLibraryManagement.Application.Usuarios;
+using DocLibraryManagement.Application.Vencimientos;
 using DocLibraryManagement.Domain;
 using DocLibraryManagement.Infrastructure;
 using DocLibraryManagement.Infrastructure.Persistencia;
@@ -90,6 +91,16 @@ public sealed class Escenario : IDisposable
 
     /// <summary>El remitente falso al que van todos los correos del escenario.</summary>
     public CorreoFalso CorreoSalida { get; } = new();
+
+    public IVencimientosService Vencimientos => _scope.ServiceProvider.GetRequiredService<IVencimientosService>();
+
+    /// <summary>Mueve el reloj a «faltan N días» (negativo: ya venció hace N días) para la fecha de próxima revisión de la revisión vigente.</summary>
+    public async Task IrASiguienteRevisionAsync(EscenarioFlujo f, int revisionId, double diasRestantes)
+    {
+        var proxima = (await Revisiones.ObtenerAsync(f.Admin, revisionId)).FechaProximaRevisionUtc
+                      ?? throw new InvalidOperationException("La revisión no tiene fecha de próxima revisión.");
+        Reloj.SetUtcNow(new DateTimeOffset(DateTime.SpecifyKind(proxima, DateTimeKind.Utc)) - TimeSpan.FromDays(diasRestantes));
+    }
 
     public IColaCorreoService Cola => _scope.ServiceProvider.GetRequiredService<IColaCorreoService>();
 

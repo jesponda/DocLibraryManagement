@@ -4,6 +4,7 @@ using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Domain;
 using DocLibraryManagement.Infrastructure.Correo;
 using DocLibraryManagement.Infrastructure.Persistencia;
+using DocLibraryManagement.Infrastructure.Vencimientos;
 using Microsoft.EntityFrameworkCore;
 
 namespace DocLibraryManagement.Infrastructure.Documentos;
@@ -44,6 +45,10 @@ internal static class Publicacion
                 anterior: $"{anterior.Etiqueta} Vigente", nuevo: $"{anterior.Etiqueta} Obsoleto",
                 comentario: $"Reemplazada por {nueva.Etiqueta}");
         }
+
+        // Una solicitud «revisado sin cambios» sobre la revisión que acaba de quedar obsoleta ya no tiene sentido.
+        await SolicitudesSinCambiosCierre.CancelarPendientesAsync(db, reloj, actor, [.. anteriores.Select(a => a.Id)], codigoDocumento,
+            $"La {anteriores.FirstOrDefault()?.Etiqueta} fue reemplazada por la {nueva.Etiqueta}.", ct);
 
         // Aquí también se guardan los cambios que el llamador dejó pendientes (la decisión, el flujo…).
         await db.SaveChangesAsync(ct);

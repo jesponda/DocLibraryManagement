@@ -1,0 +1,21 @@
+@using DocLibraryManagement.Application.Vencimientos
+@inject TimeProvider Reloj
+
+@* Marca visible del estado de la revisión periódica junto a la fecha. «Al día» no muestra nada. *@
+@switch (ReglasVencimiento.Clasificar(Fecha, Reloj.GetUtcNow().UtcDateTime))
+{
+    case EstadoVencimiento.Vencido:
+        <span class="badge text-bg-danger ms-1" title="La revisión periódica venció. El documento sigue vigente.">Vencida</span>
+        break;
+    case EstadoVencimiento.PorVencer7:
+        <span class="badge text-bg-warning ms-1" title="Vence en 7 días o menos.">Vence pronto</span>
+        break;
+    case EstadoVencimiento.PorVencer30:
+        <span class="badge text-bg-info ms-1" title="Vence en 30 días o menos.">Por vencer</span>
+        break;
+}
+
+@code {
+    /// <summary>Fecha de próxima revisión (UTC).</summary>
+    [Parameter] public DateTime? Fecha { get; set; }
+}

@@ -82,6 +82,51 @@ public class WebHttpTests(AplicacionWebFixture app) : IClassFixture<AplicacionWe
         }
     }
 
+    [Theory]
+    [InlineData("admin", true)]
+    [InlineData("autor-cal", true)]    // es el responsable del documento publicado
+    [InlineData("auditor", true)]
+    [InlineData("revisor", false)]     // puede abrir el documento por tener una etapa, pero no participa de su revisión periódica
+    public async Task El_panel_de_revision_periodica_se_muestra_solo_a_quien_participa(string persona, bool visible)
+    {
+        var (estado, _, texto) = await PedirAsync(persona, $"/documentos/{app.DocumentoPublicadoId}");
+
+        Assert.Equal(HttpStatusCode.OK, estado);
+        Assert.Equal(visible, texto.Contains("Revisión periódica"));
+        if (visible)
+        {
+            Assert.Contains("Al día", texto); // el documento sembrado vence dentro de un año
+        }
+    }
+
+    [Fact]
+    public async Task Un_documento_en_borrador_sin_vigente_no_muestra_el_panel_de_revision_periodica()
+    {
+        var (_, _, texto) = await PedirAsync("admin", $"/documentos/{app.DocumentoId}");
+
+        Assert.DoesNotContain("Revisión periódica", texto);
+    }
+
+    [Fact]
+    public async Task La_bandeja_de_tareas_carga_con_las_dos_secciones_para_el_aprobador()
+    {
+        var (estado, _, texto) = await PedirAsync("aprobador", "/pendientes");
+
+        Assert.Equal(HttpStatusCode.OK, estado);
+        Assert.Contains("Mis tareas", texto);
+        Assert.Contains(app.CodigoEnAprobacion, texto); // la tarea de aprobación sembrada sigue apareciendo
+    }
+
+    [Fact]
+    public async Task La_lista_maestra_no_marca_como_vencido_lo_que_vence_dentro_de_un_ano()
+    {
+        var (_, _, texto) = await PedirAsync("lector", "/lista-maestra");
+
+        Assert.Contains(app.CodigoPublicado, texto);
+        Assert.DoesNotContain("Vencida", texto);
+        Assert.DoesNotContain("Por vencer", texto);
+    }
+
     [Fact]
     public async Task La_pantalla_de_usuarios_lista_a_las_personas_con_su_correo_efectivo()
     {

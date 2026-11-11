@@ -41,12 +41,12 @@ aprobó, cuál es la revisión **vigente**, y garantiza que nadie use una revisi
 | 2C | Publicación, vigencia diferida, revisiones mayor/menor, dueño de área, retiro | Terminada y validada |
 | 3 | Lista maestra + exportación, búsqueda por contenido, visor y enlace estable | Terminada y validada |
 | 3+ | Ajuste: el Administrador puede cambiar la fecha o anular una aprobación que aún no entra en vigor | **Construido; validación manual pendiente** |
-| 4A | Correo: cola en BD con reintentos, plantillas en español, SMTP/carpeta, avisos de los eventos existentes, pantallas de usuarios y de cola | **Construido; validación manual pendiente** |
-| 4B | Vencimientos de la revisión periódica: alertas a 30 y 7 días, estado «Vencido», escalamiento, «revisado sin cambios» | **No iniciada** |
+| 4A | Correo: cola en BD con reintentos, plantillas en español, SMTP/carpeta, avisos de los eventos existentes, pantallas de usuarios y de cola | Terminada y validada |
+| 4B | Vencimientos de la revisión periódica: alertas a 30 y 7 días, estado «Vencido», escalamiento, «revisado sin cambios» | **Construido; validación manual pendiente** |
 | 4C | Reportes, pantalla de la bitácora, cambio de responsable | **No iniciada** |
 | 5 | Endurecimiento, guía de operación, script de despliegue | **No iniciada** |
 
-**Verificación automatizada:** 631 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
+**Verificación automatizada:** 738 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
 **No hay pruebas de interfaz en navegador:** los clics dentro de las pantallas (subir con el selector de archivos, elegir
 personas en desplegables, botones) solo se han validado manualmente.
 
@@ -58,7 +58,7 @@ personas en desplegables, botones) solo se han validado manualmente.
 2. **Entra ID / OpenID Connect no está implementado.** Solo existen el modo `Windows` y el modo `Desarrollo`.
 3. **El correo (4A) solo se ha probado contra un servidor SMTP de prueba local**, no contra el servidor corporativo
    (autenticación, TLS y relay pueden requerir ajustes). Por defecto está **desactivado** (`Correo:Modo = Desactivado`).
-   **Aún no hay alertas de vencimiento** (4B): la fecha de próxima revisión se calcula y se guarda, pero nada la consume todavía.
+   Las alertas de vencimiento (4B) dependen del correo: con `Desactivado` no se encolan avisos (el estado «Vencida» sí se ve en pantalla).
 4. **El script de despliegue y la guía de operación no existen** (Fase 5). La protección de la tabla de auditoría a nivel
    de permisos de BD está **diseñada pero no escrita** (ver [§6.5](#65-bitácora-de-auditoría)).
 5. **Pendientes de datos reales:** grupos de AD, servidor SMTP, ruta del almacén de archivos, política de respaldo.
@@ -239,6 +239,7 @@ DocLibraryManagement/
 │   │   ├── IConsultaService.cs        Lista maestra, búsqueda, visor
 │   │   ├── ReglasBusqueda.cs          Términos, escape de LIKE, fragmento con resaltado
 │   │   └── Servicios.cs               IExtractorTexto, IExportadorListaMaestra, IIndexadorService
+│   ├── Vencimientos/Vencimientos.cs   ReglasVencimiento (30/7 días, nueva fecha), IVencimientosService, DTOs
 │   └── Usuarios/IUsuarioSincronizador.cs
 │
 ├── DocLibraryManagement.Infrastructure/  (≈2,900 líneas)
@@ -249,15 +250,16 @@ DocLibraryManagement/
 │   │   ├── Bitacora.cs                Registrar(...) y detección de violación de unicidad
 │   │   ├── UsuarioSincronizador.cs    Alta/actualización de usuario al iniciar sesión
 │   │   ├── AppDbContextFactory.cs     Solo para `dotnet ef` (usa DOCLIB_CONNECTION o LocalDB)
-│   │   └── Migraciones/               6 migraciones (Inicial, UsuarioRolesCopia, FlujoYArchivos, PublicacionYDueno, MotivoCierreFlujo, Notificaciones)
+│   │   └── Migraciones/               7 migraciones (Inicial, UsuarioRolesCopia, FlujoYArchivos, PublicacionYDueno, MotivoCierreFlujo, Notificaciones, SolicitudesSinCambios)
 │   ├── Catalogo/CatalogoService.cs
+│   ├── Vencimientos/VencimientosService.cs  Avisos 30/7/vencido/escalamiento (idempotentes por clave), «revisado sin cambios»
 │   ├── Documentos/
 │   │   ├── DocumentoService.cs        Creación con consecutivo seguro ante concurrencia (reintento)
 │   │   ├── RevisionService.cs         Edición de borrador, subida/descarga de archivos, nuevas revisiones, retiro
 │   │   ├── Publicacion.cs             ÚNICA puerta para pasar una revisión a Vigente (ver §5.4)
 │   │   ├── PublicacionService.cs      ActivarPendientesAsync (vigencia diferida)
 │   │   ├── PermisosDocumento.cs       Quién puede ver qué (gestores, asignados, lectura abierta)
-│   │   └── TareasDeFondo.cs           BackgroundService: activa vigencias e indexa texto
+│   │   └── TareasDeFondo.cs           BackgroundService: activa vigencias, avisa vencimientos e indexa texto
 │   ├── Flujo/FlujoService.cs          Envío, decisiones, separación de funciones, reasignar, cancelar
 │   ├── Correo/
 │   │   ├── EncoladorNotificaciones.cs Encola el aviso en la MISMA transacción del cambio de negocio (interno)
@@ -286,12 +288,14 @@ DocLibraryManagement/
 │   └── Components/
 │       ├── App.razor · Routes.razor · _Imports.razor
 │       ├── Layout/                    MainLayout, NavMenu (menú por rol), ReconnectModal
-│       ├── Shared/                    PaginaBase (errores de negocio), Mensajes, Presentacion (textos de estados), AccesoDenegado
+│       ├── Shared/                    PaginaBase (errores de negocio), Mensajes, Presentacion (textos de estados), AccesoDenegado, InsigniaVencimiento
 │       ├── Revision/PanelRevision.razor   Panel de una revisión: archivos, envío, flujo, decisión
+│       ├── Revision/PanelRevisionPeriodica.razor   Vencimiento de la vigente y «revisado sin cambios» (proponer/decidir/retirar)
 │       └── Pages/                     Una página por ruta (ver tabla abajo)
 │
-└── DocLibraryManagement.Tests/        (631 pruebas)
+└── DocLibraryManagement.Tests/        (738 pruebas)
     ├── Datos/                         BaseDatosFixture, Escenario (servicios reales + reloj simulado), GeneradorPdf
+    ├── Vencimientos/                  Reglas de 30/7 días, avisos y escalamiento con reloj simulado, «revisado sin cambios»
     ├── Correo/                        Reglas puras, avisos por evento, cola (reintentos, concurrencia), SMTP real local, usuarios
     │                                  (Dobles.cs: remitente falso y servidor SMTP mínimo de verdad)
     ├── Seguridad/ · Catalogo/ · Archivos/ · Flujo/ · Documentos/ · Consulta/
@@ -308,7 +312,7 @@ DocLibraryManagement/
 | `/doc/{codigo}` | autenticado | estático | **Enlace estable** → PDF de la revisión vigente |
 | `/doc/{codigo}/{etiqueta}` | según revisión | estático | Revisión concreta (obsoleta: solo gestores) |
 | `/mi-acceso` | autenticado | estático | Roles y áreas del usuario |
-| `/documentos`, `/documentos/nuevo`, `/documentos/{id}` | Autor / Admin / Auditor (detalle también Revisor y Aprobador asignados) | interactivo | Gestión de documentos y revisiones |
+| `/documentos`, `/documentos/nuevo`, `/documentos/{id}` | Autor / Admin / Auditor (detalle también Revisor y Aprobador asignados, y el dueño del área en los documentos de su área) | interactivo | Gestión de documentos y revisiones |
 | `/pendientes` | Revisor, Aprobador | interactivo | Mis tareas |
 | `/administracion`, `/areas`, `/tipos`, `/flujos` | Administrador | interactivo | Catálogos y plantillas de flujo |
 | `/administracion/usuarios` | Administrador | interactivo | Usuarios y su correo (capturado o por convención) |
@@ -414,6 +418,29 @@ stateDiagram-v2
   antes de existir la búsqueda.
 - **Obsoletas:** solo Administrador y Auditor pueden incluirlas en la búsqueda; el servicio lo exige aunque la URL lo pida.
 
+### 5.7 Revisión periódica y vencimientos (4B)
+
+- **La fecha** `FechaProximaRevisionUtc` se fija al publicar (vigencia + meses del tipo). **«Vencido» es un estado derivado** de esa
+  fecha (`ReglasVencimiento.Clasificar`): el documento **sigue Vigente**; solo se marca en pantalla y se avisa. No hay columna de estado.
+- **Avisos** (los genera `VencimientosService.ProcesarAsync`, llamado por `TareasDeFondo` cada `MinutosEntreEjecuciones`):
+  a **30 días** y a **7 días** (al responsable); al **vencer** (al responsable) y **escalamiento** al **dueño del área**
+  (si el área no tiene dueño, está inactivo o es el mismo responsable, a los Administradores); y **vigencia próxima** (3 días
+  antes de que una revisión aprobada entre en vigor, al autor y al responsable).
+  Si la primera vez que se nota faltan menos de 7 días, solo sale el urgente.
+- **Idempotencia:** cada aviso lleva una `Clave` única que incluye la revisión, la **marca de la fecha** y el destinatario
+  (p. ej. `Venc7:42:202711050800:<guid>`). Por eso correr el proceso 100 veces no duplica, y al extenderse la fecha el
+  **ciclo siguiente vuelve a avisar**. Dos instancias a la vez: la violación de la clave única se absorbe.
+- **«Revisado sin cambios»** (`SolicitudSinCambios`): el **responsable** (o un Administrador) lo propone con comentario
+  obligatorio, **solo desde 30 días antes del vencimiento** (evita empujar la fecha con meses de anticipación). Lo decide el **dueño
+  del área** (o un Administrador) **en una sola etapa**; **quien propone nunca decide** su propia solicitud. Aprobar extiende la
+  fecha **un periodo completo contado desde la fecha vigente** si aún no vence, o **desde hoy** si ya venció. Rechazar exige motivo
+  y no cambia la fecha. Todo queda en la bitácora (`Revision.SinCambios.*`) y avisa a la otra parte.
+- **Una sola solicitud pendiente por revisión**, garantizada con el índice único filtrado `UX_SinCambios_UnicaPendiente`.
+  Si la revisión deja de ser la vigente (se publica otra o se retira el documento), la solicitud pendiente se **cancela sola**.
+- **Dónde se ve:** panel «Revisión periódica» en `/documentos/{id}` (el servicio devuelve qué puede hacer cada persona),
+  insignias «Vencida / Vence pronto / Por vencer» junto a la fecha en la lista maestra y el visor, y las solicitudes por decidir en
+  «Mis tareas» del dueño.
+
 ---
 
 ## 6. Seguridad
@@ -451,6 +478,11 @@ reflejarse.** Existe una copia informativa en `Usuarios.RolesUltimoAcceso` solo 
 - **Políticas:** `PuedeEditarDocumentos`, `PuedeRevisar`, `PuedeAprobar`, `PuedeAuditar`, `PuedeAdministrar` (`ConfiguracionSeguridad.cs`).
 - **Por recurso:** `EdicionEnAreaHandler` decide si un Autor edita en el área de un documento.
 - **Defensa en profundidad:** además de las políticas, **cada servicio vuelve a validar** con el `Actor`.
+- **Quién ve un documento no vigente** (`PermisosDocumento.PuedeVerDocumentoAsync`): gestores (Administrador, Auditor, Autor del
+  área), **el dueño del área** (solo si conserva el rol Aprobador; solo lectura, no edita) y quien tenga o haya tenido una etapa
+  en él. El dueño no necesita haber participado en el flujo: sin eso no podría abrir el documento para decidir un
+  «revisado sin cambios». Las pantallas de gestión (`/documentos`) siguen siendo solo de Autor, Administrador y Auditor;
+  Revisor y Aprobador entran por «Mis tareas».
 - **Sin filtración de existencia:** para un lector, un documento inexistente, no publicado o retirado muestra **el mismo
   mensaje genérico**, sin revelar título ni código.
 
@@ -514,7 +546,7 @@ niveles es `__`) o *user secrets* en desarrollo. **No guardar secretos en el rep
 | `Correo:CarpetaSalida` | `App_Data/correo` | Destino del modo Carpeta | No |
 | `Correo:MaximoIntentos` / `MinutosReintento` | `5` / `5` | Reintentos; la espera se duplica en cada intento (5, 10, 20…) | Opcional |
 | `Correo:SegundosEntreEnvios` / `MinutosArriendo` | `30` / `10` | Frecuencia del envío (`0` lo apaga) y tiempo antes de retomar un envío que quedó a medias | Opcional |
-| `Correo:Plantillas:<Evento>:Asunto` / `Cuerpo` | texto en español | Reemplazo de plantilla. Eventos: `TareaAsignada`, `Rechazada`, `Publicada`, `AprobacionRevocada`, `VigenciaReprogramada`. Marcadores: `{Destinatario}`, `{Codigo}`, `{Etiqueta}`, `{Titulo}`, `{Enlace}`, `{EnlaceVisor}`; según el evento también `{Etapa}`, `{TipoEtapa}`, `{Autor}`, `{Actor}`, `{Motivo}`, `{Fecha}`. Un marcador desconocido queda visible en el correo | Opcional |
+| `Correo:Plantillas:<Evento>:Asunto` / `Cuerpo` | texto en español | Reemplazo de plantilla. Eventos: `TareaAsignada`, `Rechazada`, `Publicada`, `AprobacionRevocada`, `VigenciaReprogramada`, `AlertaVencimiento`, `DocumentoVencido`, `EscalamientoVencido`, `SinCambiosSolicitada`, `SinCambiosResuelta`, `VigenciaProxima`. Marcadores: `{Destinatario}`, `{Codigo}`, `{Etiqueta}`, `{Titulo}`, `{Enlace}`, `{EnlaceVisor}`; según el evento también `{Etapa}`, `{TipoEtapa}`, `{Autor}`, `{Actor}`, `{Motivo}`, `{Fecha}`, `{Dias}`, `{Responsable}`, `{Resultado}`, `{Detalle}`. Un marcador desconocido queda visible en el correo | Opcional |
 | `Desarrollo:Personas` | 6 personas (solo `appsettings.Development.json`) | Usuarios simulados | No aplica |
 
 Ejemplos de variables de entorno:
@@ -666,6 +698,9 @@ Decisiones tomadas y su razón. El detalle completo y cronológico está en `doc
 | **Cola de correo en BD**, encolada en la misma transacción del cambio | Si la operación falla no sale un correo falso; si se confirma, el aviso no se pierde aunque el SMTP esté caído | Entrega *al-menos-una-vez*; el envío es asíncrono (retraso de hasta `SegundosEntreEnvios`) |
 | **Dirección de correo resuelta al enviar** (capturada > convención) | Corregir una dirección arregla también los reintentos | Si cambia la convención, cambian los destinos de lo pendiente |
 | **Quien actúa no recibe aviso de su propia acción** | Evita ruido (el Administrador que anula no necesita un correo) | Un Administrador que es también autor no se entera por correo de lo que hizo él mismo |
+| **«Vencido» derivado de la fecha**, no guardado | Sin job que actualice un estado ni riesgo de inconsistencia; el documento sigue vigente (decisión) | Consultar «vencidos» exige filtrar por fecha (el reporte 4C lo hará) |
+| **Escalamiento a Administradores** usa la copia informativa de roles (`RolesUltimoAcceso`) | No hay forma de listar a los miembros de un grupo de AD desde la aplicación | Un Administrador que nunca ha iniciado sesión no recibe el aviso |
+| **Aviso de «vencido» una sola vez** (no se repite cada semana) | Evita ruido; el estado sigue visible en pantalla y reportes | Si se ignora el correo, nadie vuelve a avisar hasta que se atienda |
 | **Correo `Desactivado` por defecto** | Un despliegue sin configurar no envía nada ni acumula cola | Hay que activarlo explícitamente |
 
 ### Limitaciones conocidas
@@ -673,7 +708,8 @@ Decisiones tomadas y su razón. El detalle completo y cronológico está en `doc
 - SSO Windows no verificado de extremo a extremo; sin Entra ID.
 - Correo (4A): entrega *al-menos-una-vez* (en un fallo a mitad de envío podría duplicarse, no perderse); texto plano,
   sin adjuntos ni resumen diario; probado solo contra un SMTP de prueba local.
-- Sin alertas ni estado «Vencido» (4B).
+- Vencimientos (4B): los avisos corren con `TareasDeFondo` (por defecto cada 5 min) y requieren correo activado; los clics del panel
+  «Revisión periódica» no tienen prueba de navegador (solo el servicio y el renderizado están probados).
 - **Sin pantalla de consulta de la bitácora** (solo SQL directo sobre `Auditoria`; 4C).
 - Sin pruebas de interfaz en navegador.
 - Exportación limitada a 5,000 filas; texto de PDF limitado a 2 millones de caracteres.
@@ -694,7 +730,7 @@ Decisiones tomadas y su razón. El detalle completo y cronológico está en `doc
 **Fase 4 — Alertas y reportes** (en tres tramos)
 - **4A — Correo (construido):** cola en BD con reintentos, plantillas en español, SMTP/carpeta; avisos de tarea asignada,
   rechazo, publicación, aprobación anulada y vigencia reprogramada; pantallas de usuarios y de cola.
-- **4B — Vencimientos:** alertas a **30 y 7 días** al responsable; estado **«Vencido»** (el documento *sigue vigente*) con
+- **4B — Vencimientos (construido):** alertas a **30 y 7 días** al responsable; estado **«Vencido»** (el documento *sigue vigente*) con
   escalamiento al **dueño del área** (si no hay, a los Administradores); acción *«Revisado sin cambios»* propuesta por el
   responsable y aprobada por el dueño en una etapa (extiende el vencimiento, con bitácora); aviso de vigencia diferida próxima.
   Idempotente por `Notificacion.Clave`. Reaprovecha `TareasDeFondo` y `FechaProximaRevisionUtc`.

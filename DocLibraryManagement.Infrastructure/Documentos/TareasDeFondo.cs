@@ -1,5 +1,6 @@
 using DocLibraryManagement.Application.Consulta;
 using DocLibraryManagement.Application.Documentos;
+using DocLibraryManagement.Application.Vencimientos;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -45,6 +46,15 @@ internal sealed class TareasDeFondo(
                 if (n > 0)
                 {
                     log.LogInformation("Se pusieron en vigor {Cantidad} revisión(es) programada(s).", n);
+                }
+            });
+
+            await EjecutarAsync("avisos de vencimiento", async sp =>
+            {
+                var resumen = await sp.GetRequiredService<IVencimientosService>().ProcesarAsync(ct);
+                if (resumen.AvisosEncolados > 0)
+                {
+                    log.LogInformation("Se encolaron {Cantidad} aviso(s) de vencimiento o de vigencia próxima.", resumen.AvisosEncolados);
                 }
             });
 

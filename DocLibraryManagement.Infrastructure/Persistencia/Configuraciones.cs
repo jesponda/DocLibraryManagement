@@ -205,6 +205,28 @@ internal sealed class NotificacionConfig : IEntityTypeConfiguration<Notificacion
     }
 }
 
+internal sealed class SolicitudSinCambiosConfig : IEntityTypeConfiguration<SolicitudSinCambios>
+{
+    public void Configure(EntityTypeBuilder<SolicitudSinCambios> b)
+    {
+        b.ToTable("SolicitudesSinCambios");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.RowVersion).IsRowVersion();
+        b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.Comentario).HasMaxLength(1000).IsRequired();
+        b.Property(x => x.ComentarioDecision).HasMaxLength(1000);
+        b.HasOne(x => x.Revision).WithMany().HasForeignKey(x => x.RevisionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.Solicitante).WithMany().HasForeignKey(x => x.SolicitanteId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.DecididaPor).WithMany().HasForeignKey(x => x.DecididaPorId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.RevisionId, "IX_SolicitudesSinCambios_RevisionId"); // nombrado: comparte columna con el índice único de abajo
+
+        // Una sola solicitud pendiente por revisión, garantizada en BD (dos personas proponiéndola a la vez).
+        b.HasIndex(x => x.RevisionId, "UX_SinCambios_UnicaPendiente")
+            .IsUnique()
+            .HasFilter("[Estado] = 'Pendiente'");
+    }
+}
+
 internal sealed class EventoAuditoriaConfig : IEntityTypeConfiguration<EventoAuditoria>
 {
     public void Configure(EntityTypeBuilder<EventoAuditoria> b)

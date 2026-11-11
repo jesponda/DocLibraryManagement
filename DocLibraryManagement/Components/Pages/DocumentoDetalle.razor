@@ -164,6 +164,11 @@ else
         </div>
     }
 
+    @if (revisionVigenteId != 0 && doc.Estado == EstadoDocumento.Activo)
+    {
+        <PanelRevisionPeriodica RevisionId="@revisionVigenteId" OnCambio="RecargarAsync" />
+    }
+
     @if (revisionId != 0)
     {
         <PanelRevision RevisionId="@revisionId" OnCambio="RecargarAsync" />
@@ -177,6 +182,7 @@ else
     private List<SubAreaDto> subAreas = [];
     private int subAreaElegida;
     private int revisionId;
+    private int revisionVigenteId;
     private bool puedeEditar;
     private bool esAdmin;
     private bool hayVigente;
@@ -224,6 +230,7 @@ else
             puedeEditar = a.PuedeEditarEnArea(doc.CodigoArea);
             esAdmin = a.EsAdministrador;
             hayVigente = doc.Revisiones.Any(r => r.Estado == EstadoRevision.Vigente);
+            revisionVigenteId = doc.Revisiones.FirstOrDefault(r => r.Estado == EstadoRevision.Vigente)?.Id ?? 0;
             hayAbierta = doc.Revisiones.Any(r => r.Estado.EsAbierta());
             var area = (await Catalogo.ListarAreasAsync(incluirInactivas: true)).FirstOrDefault(x => x.Id == doc.AreaId);
             nombreDueno = area?.NombreDueno;

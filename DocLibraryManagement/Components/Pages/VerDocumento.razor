@@ -48,7 +48,14 @@ else
         }
         <dt class="col-sm-3">@(vista.ResponsableEsAutor ? "Elaborada por" : "Responsable")</dt><dd class="col-sm-9">@vista.Responsable</dd>
         <dt class="col-sm-3">Vigente desde</dt><dd class="col-sm-9">@Fecha(vista.FechaVigenciaUtc)</dd>
-        <dt class="col-sm-3">Próxima revisión</dt><dd class="col-sm-9">@Fecha(vista.FechaProximaRevisionUtc)</dd>
+        <dt class="col-sm-3">Próxima revisión</dt>
+        <dd class="col-sm-9">
+            @Fecha(vista.FechaProximaRevisionUtc)
+            @if (vista.Estado == EstadoRevision.Vigente)
+            {
+                <InsigniaVencimiento Fecha="@vista.FechaProximaRevisionUtc" />
+            }
+        </dd>
     </dl>
 
     @if (vista.TienePdf)

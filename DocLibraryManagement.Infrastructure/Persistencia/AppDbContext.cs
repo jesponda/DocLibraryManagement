@@ -16,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<InstanciaFlujo> InstanciasFlujo => Set<InstanciaFlujo>();
     public DbSet<PasoInstancia> PasosInstancia => Set<PasoInstancia>();
     public DbSet<Notificacion> Notificaciones => Set<Notificacion>();
+    public DbSet<SolicitudSinCambios> SolicitudesSinCambios => Set<SolicitudSinCambios>();
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<EventoAuditoria> Auditoria => Set<EventoAuditoria>();
 

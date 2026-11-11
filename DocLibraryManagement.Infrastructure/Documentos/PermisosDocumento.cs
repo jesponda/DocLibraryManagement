@@ -21,9 +21,19 @@ internal static class PermisosDocumento
             p => p.AsignadoA!.Identificador == actor.Identificador
                  && p.Instancia!.Revision!.DocumentoId == documentoId, ct);
 
+    /// <summary>
+    /// Es el dueño designado del área Y conserva el rol de Aprobador (los roles salen de AD, así que si se lo quitan
+    /// pierde el acceso aunque el área lo siga nombrando). Ve los documentos de su área, solo lectura: no edita.
+    /// </summary>
+    public static async Task<bool> EsDuenoDelAreaAsync(AppDbContext db, Actor actor, string codigoArea, CancellationToken ct) =>
+        actor.TieneRol(RolSistema.Aprobador)
+        && await db.Areas.AnyAsync(a => a.Codigo == codigoArea && a.Dueno != null && a.Dueno.Identificador == actor.Identificador, ct);
+
     public static async Task<bool> PuedeVerDocumentoAsync(
         AppDbContext db, Actor actor, string codigoArea, int documentoId, CancellationToken ct) =>
-        EsGestor(actor, codigoArea) || await TieneEtapaAsignadaAsync(db, actor, documentoId, ct);
+        EsGestor(actor, codigoArea)
+        || await EsDuenoDelAreaAsync(db, actor, codigoArea, ct)
+        || await TieneEtapaAsignadaAsync(db, actor, documentoId, ct);
 
     /// <summary>Lo vigente es de lectura abierta; todo lo demás sigue la regla del documento.</summary>
     public static async Task<bool> PuedeVerRevisionAsync(

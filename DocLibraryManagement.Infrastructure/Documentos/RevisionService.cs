@@ -7,6 +7,7 @@ using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Domain;
 using DocLibraryManagement.Infrastructure.Correo;
 using DocLibraryManagement.Infrastructure.Persistencia;
+using DocLibraryManagement.Infrastructure.Vencimientos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -517,6 +518,9 @@ internal sealed class RevisionService(
                 rev.Estado = EstadoRevision.Cancelado;
             }
         }
+
+        await SolicitudesSinCambiosCierre.CancelarPendientesAsync(db, reloj, actor,
+            [.. doc.Revisiones.Where(r => r.Estado == EstadoRevision.Obsoleto).Select(r => r.Id)], doc.Codigo, "El documento fue retirado.", ct);
 
         doc.Estado = EstadoDocumento.Retirado;
         Bitacora.Registrar(db, reloj, actor, "Documento.Retirar", nameof(Documento), doc.Codigo,

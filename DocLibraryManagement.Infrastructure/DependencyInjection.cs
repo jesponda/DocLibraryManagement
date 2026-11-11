@@ -5,6 +5,7 @@ using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Application.Flujo;
 using DocLibraryManagement.Application.Usuarios;
+using DocLibraryManagement.Application.Vencimientos;
 using DocLibraryManagement.Infrastructure.Archivos;
 using DocLibraryManagement.Infrastructure.Catalogo;
 using DocLibraryManagement.Infrastructure.Consulta;
@@ -12,6 +13,7 @@ using DocLibraryManagement.Infrastructure.Correo;
 using DocLibraryManagement.Infrastructure.Documentos;
 using DocLibraryManagement.Infrastructure.Flujo;
 using DocLibraryManagement.Infrastructure.Persistencia;
+using DocLibraryManagement.Infrastructure.Vencimientos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,6 +43,7 @@ public static class DependencyInjection
         services.AddScoped<IRevisionService, RevisionService>();
         services.AddScoped<IFlujoService, FlujoService>();
         services.AddScoped<IPublicacionService, PublicacionService>();
+        services.AddScoped<IVencimientosService, VencimientosService>();
 
         services.AddSingleton<IExtractorTexto, ExtractorTextoPdf>();
         services.AddSingleton<IExportadorListaMaestra, ExportadorListaMaestra>();

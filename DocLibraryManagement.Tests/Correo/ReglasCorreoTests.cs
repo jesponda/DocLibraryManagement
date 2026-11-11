@@ -102,12 +102,11 @@ public class ReglasCorreoTests
     private static readonly IReadOnlyDictionary<string, PlantillaOpciones> SinConfiguracion =
         new Dictionary<string, PlantillaOpciones>();
 
+    // Recorre TODOS los eventos declarados: un evento nuevo sin plantilla (o sin enlace) hace fallar esta prueba.
+    public static TheoryData<string> TodosLosEventos => [.. EventosCorreo.Todos];
+
     [Theory]
-    [InlineData(EventosCorreo.TareaAsignada)]
-    [InlineData(EventosCorreo.Rechazada)]
-    [InlineData(EventosCorreo.Publicada)]
-    [InlineData(EventosCorreo.AprobacionRevocada)]
-    [InlineData(EventosCorreo.VigenciaReprogramada)]
+    [MemberData(nameof(TodosLosEventos))]
     public void Cada_evento_tiene_plantilla_con_los_datos_para_actuar(string evento)
     {
         var p = PlantillasCorreo.Predeterminada(evento);

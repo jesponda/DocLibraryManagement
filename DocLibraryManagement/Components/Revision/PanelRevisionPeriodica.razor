@@ -1,0 +1,214 @@
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Vencimientos
+@using DocLibraryManagement.Domain
+@inject IVencimientosService Vencimientos
+
+@* Revisión periódica (7.4) de la revisión VIGENTE: estado del vencimiento y «revisado sin cambios». Los permisos los
+   resuelve el servicio (PuedeProponer / PuedeDecidir / PuedeCancelar); aquí solo se reflejan. *@
+
+<Mensajes Error="@Error" Exito="@Exito" />
+
+@if (panel is not null)
+{
+    <div class="card mb-3 @ClaseBorde" style="max-width: 56rem">
+        <div class="card-header d-flex justify-content-between">
+            <strong>Revisión periódica · @panel.Etiqueta</strong>
+            <span class="badge @ClaseInsignia">@TextoEstado</span>
+        </div>
+        <div class="card-body">
+            @if (panel.FechaProximaRevisionUtc is { } proxima)
+            {
+                <p class="mb-2">Próxima revisión: <strong>@proxima.ToLocalTime().ToString("dd/MM/yyyy")</strong></p>
+            }
+
+            @if (panel.Vencimiento == EstadoVencimiento.Vencido)
+            {
+                <div class="alert alert-danger">
+                    La revisión periódica de este documento <strong>está vencida</strong>. El documento sigue vigente, pero aparece como vencido
+                    en los reportes. Declara que está <em>revisado sin cambios</em> o abre una revisión nueva.
+                </div>
+            }
+
+            @if (panel.Pendiente is { } p)
+            {
+                <div class="alert alert-info">
+                    <strong>@p.Solicitante</strong> declaró este documento <em>revisado sin cambios</em> el @p.FechaSolicitudUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm"),
+                    pendiente de la decisión de <strong>@(panel.NombreDueno ?? "un Administrador (el área no tiene dueño)")</strong>.
+                    <div class="mt-2 fst-italic">«@p.Comentario»</div>
+                </div>
+
+                @if (panel.PuedeDecidir)
+                {
+                    <div class="mb-2">
+                        <label class="form-label" for="comentarioDecision">Comentario <span class="text-muted">(obligatorio al rechazar)</span></label>
+                        <textarea id="comentarioDecision" class="form-control" rows="2" maxlength="1000" @bind="comentarioDecision"></textarea>
+                    </div>
+                    <button class="btn btn-success" @onclick="() => DecidirAsync(true)">Aprobar: extender la próxima revisión</button>
+                    <button class="btn btn-outline-danger" @onclick="() => DecidirAsync(false)">Rechazar</button>
+                }
+
+                @if (panel.PuedeCancelar)
+                {
+                    <button class="btn btn-link" @onclick="CancelarAsync">Cancelar la solicitud</button>
+                }
+            }
+
+            @if (panel.PuedeProponer)
+            {
+                <button class="btn btn-outline-primary" @onclick="() => proponiendo = !proponiendo">Revisado sin cambios…</button>
+
+                @if (proponiendo)
+                {
+                    <div class="mt-3">
+                        <p class="text-muted mb-2">
+                            Declaras que revisaste el documento y <strong>no requiere cambios</strong>.
+                            Lo aprueba el dueño del área (@(panel.NombreDueno ?? "un Administrador, porque el área no tiene dueño")); si lo aprueba,
+                            la próxima revisión se extiende un periodo completo.
+                        </p>
+                        <label class="form-label" for="comentarioPropuesta">¿Qué revisaste y por qué sigue vigente tal cual?</label>
+                        <textarea id="comentarioPropuesta" class="form-control mb-2" rows="3" maxlength="1000" @bind="comentarioPropuesta"></textarea>
+                        <button class="btn btn-primary" @onclick="ProponerAsync">Enviar a decisión</button>
+                        <button class="btn btn-link" @onclick="() => proponiendo = false">Cancelar</button>
+                    </div>
+                }
+            }
+
+            @if (resueltas.Count > 0)
+            {
+                <h3 class="h6 mt-3">Historial de «revisado sin cambios»</h3>
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Fecha</th><th>Propuso</th><th>Comentario</th><th>Resultado</th><th>Decidió</th></tr></thead>
+                    <tbody>
+                    @foreach (var s in resueltas)
+                    {
+                        <tr>
+                            <td>@s.FechaSolicitudUtc.ToLocalTime().ToString("dd/MM/yyyy")</td>
+                            <td>@s.Solicitante</td>
+                            <td>@s.Comentario</td>
+                            <td>
+                                <span class="badge @ClaseResultado(s.Estado)">@NombreResultado(s.Estado)</span>
+                                @if (s.FechaProximaNuevaUtc is { } nueva)
+                                {
+                                    <div class="small text-muted">Próxima revisión: @nueva.ToLocalTime().ToString("dd/MM/yyyy")</div>
+                                }
+                            </td>
+                            <td>
+                                @(s.DecididaPor ?? "—")
+                                @if (!string.IsNullOrEmpty(s.ComentarioDecision))
+                                {
+                                    <div class="small text-muted">@s.ComentarioDecision</div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>La revisión VIGENTE del documento.</summary>
+    [Parameter, EditorRequired] public int RevisionId { get; set; }
+
+    [Parameter] public EventCallback OnCambio { get; set; }
+
+    private PanelRevisionPeriodicaDto? panel;
+    private bool proponiendo;
+    private string comentarioPropuesta = "";
+    private string comentarioDecision = "";
+
+    private IReadOnlyList<SolicitudSinCambiosDto> resueltas =>
+        [.. panel?.Historial.Where(s => s.Estado != EstadoSolicitudSinCambios.Pendiente) ?? []];
+
+    private string ClaseBorde => panel?.Vencimiento switch
+    {
+        EstadoVencimiento.Vencido => "border-danger",
+        EstadoVencimiento.PorVencer7 => "border-warning",
+        _ => "",
+    };
+
+    private string ClaseInsignia => panel?.Vencimiento switch
+    {
+        EstadoVencimiento.Vencido => "text-bg-danger",
+        EstadoVencimiento.PorVencer7 => "text-bg-warning",
+        EstadoVencimiento.PorVencer30 => "text-bg-info",
+        _ => "text-bg-success",
+    };
+
+    private string TextoEstado => panel?.Vencimiento switch
+    {
+        EstadoVencimiento.Vencido => "Vencida",
+        EstadoVencimiento.PorVencer7 or EstadoVencimiento.PorVencer30 => $"Vence en {panel!.DiasRestantes} día(s)",
+        _ => "Al día",
+    };
+
+    private static string NombreResultado(EstadoSolicitudSinCambios e) => e switch
+    {
+        EstadoSolicitudSinCambios.Aprobada => "Aprobada",
+        EstadoSolicitudSinCambios.Rechazada => "Rechazada",
+        EstadoSolicitudSinCambios.Cancelada => "Cancelada",
+        _ => "Pendiente",
+    };
+
+    private static string ClaseResultado(EstadoSolicitudSinCambios e) => e switch
+    {
+        EstadoSolicitudSinCambios.Aprobada => "text-bg-success",
+        EstadoSolicitudSinCambios.Rechazada => "text-bg-danger",
+        _ => "text-bg-secondary",
+    };
+
+    protected override async Task OnParametersSetAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        var error = Error;
+        var exito = Exito;
+
+        await EjecutarAsync(async a => panel = await Vencimientos.PanelAsync(a, RevisionId));
+
+        if (Error is null && Exito is null)
+        {
+            Error = error;
+            Exito = exito;
+        }
+    }
+
+    private async Task ProponerAsync()
+    {
+        if (await EjecutarAsync(a => Vencimientos.ProponerSinCambiosAsync(a, RevisionId, comentarioPropuesta),
+                "La solicitud se envió a decisión."))
+        {
+            proponiendo = false;
+            comentarioPropuesta = "";
+            await NotificarAsync();
+        }
+    }
+
+    private async Task DecidirAsync(bool aprobar)
+    {
+        var id = panel!.Pendiente!.Id;
+        if (await EjecutarAsync(a => Vencimientos.DecidirSinCambiosAsync(a, id, aprobar, comentarioDecision),
+                aprobar ? "Aprobada: la próxima revisión se extendió." : "Solicitud rechazada."))
+        {
+            comentarioDecision = "";
+            await NotificarAsync();
+        }
+    }
+
+    private async Task CancelarAsync()
+    {
+        var id = panel!.Pendiente!.Id;
+        if (await EjecutarAsync(a => Vencimientos.CancelarSinCambiosAsync(a, id), "La solicitud se canceló."))
+        {
+            await NotificarAsync();
+        }
+    }
+
+    private async Task NotificarAsync()
+    {
+        await CargarAsync();
+        await OnCambio.InvokeAsync();
+    }
+}

@@ -82,6 +82,21 @@ public static class EventosCorreo
     public const string Publicada = nameof(Publicada);
     public const string AprobacionRevocada = nameof(AprobacionRevocada);
     public const string VigenciaReprogramada = nameof(VigenciaReprogramada);
+
+    // Revisión periódica (7.4)
+    public const string AlertaVencimiento = nameof(AlertaVencimiento);
+    public const string DocumentoVencido = nameof(DocumentoVencido);
+    public const string EscalamientoVencido = nameof(EscalamientoVencido);
+    public const string SinCambiosSolicitada = nameof(SinCambiosSolicitada);
+    public const string SinCambiosResuelta = nameof(SinCambiosResuelta);
+    public const string VigenciaProxima = nameof(VigenciaProxima);
+
+    /// <summary>Todos los eventos con plantilla.</summary>
+    public static IReadOnlyList<string> Todos { get; } =
+    [
+        TareaAsignada, Rechazada, Publicada, AprobacionRevocada, VigenciaReprogramada,
+        AlertaVencimiento, DocumentoVencido, EscalamientoVencido, SinCambiosSolicitada, SinCambiosResuelta, VigenciaProxima,
+    ];
 }
 
 public sealed record Plantilla(string Asunto, string Cuerpo);
@@ -120,6 +135,36 @@ public static class PlantillasCorreo
             "[Gestión documental] Cambió la fecha de vigencia de {Codigo} {Etiqueta}",
             "Hola {Destinatario},\n\n{Actor} cambió la fecha de entrada en vigor de {Codigo} {Etiqueta} – {Titulo}.\n"
             + "Nueva fecha: {Fecha}.\n\nMotivo: {Motivo}\n\nDetalle: {Enlace}" + Pie),
+
+        EventosCorreo.AlertaVencimiento => new Plantilla(
+            "[Gestión documental] La revisión de {Codigo} {Etiqueta} vence en {Dias} día(s)",
+            "Hola {Destinatario},\n\nLa revisión periódica de {Codigo} {Etiqueta} – {Titulo} vence el {Fecha} (faltan {Dias} día(s)).\n\n"
+            + "Revísalo: si sigue vigente tal cual, propón «Revisado sin cambios»; si requiere cambios, abre una revisión nueva.\n\n{Enlace}" + Pie),
+
+        EventosCorreo.DocumentoVencido => new Plantilla(
+            "[Gestión documental] Venció la revisión de {Codigo} {Etiqueta}",
+            "Hola {Destinatario},\n\nLa revisión periódica de {Codigo} {Etiqueta} – {Titulo} venció el {Fecha}. El documento sigue vigente, "
+            + "pero aparece como vencido en los reportes.\n\nPropón «Revisado sin cambios» o abre una revisión nueva: {Enlace}" + Pie),
+
+        EventosCorreo.EscalamientoVencido => new Plantilla(
+            "[Gestión documental] Documento vencido sin atender: {Codigo} {Etiqueta}",
+            "Hola {Destinatario},\n\nLa revisión periódica de {Codigo} {Etiqueta} – {Titulo} venció el {Fecha} y su responsable ({Responsable}) "
+            + "todavía no la atiende. Se te avisa por ser quien da seguimiento a esta área.\n\nDetalle: {Enlace}" + Pie),
+
+        EventosCorreo.SinCambiosSolicitada => new Plantilla(
+            "[Gestión documental] Pide tu decisión: {Codigo} {Etiqueta} revisado sin cambios",
+            "Hola {Destinatario},\n\n{Actor} declara que revisó {Codigo} {Etiqueta} – {Titulo} y no requiere cambios. "
+            + "La fecha de próxima revisión actual es {Fecha}.\n\nComentario: {Motivo}\n\nApruébalo o recházalo aquí: {Enlace}" + Pie),
+
+        EventosCorreo.SinCambiosResuelta => new Plantilla(
+            "[Gestión documental] {Actor} {Resultado} «revisado sin cambios» de {Codigo} {Etiqueta}",
+            "Hola {Destinatario},\n\n{Actor} {Resultado} tu solicitud de «revisado sin cambios» de {Codigo} {Etiqueta} – {Titulo}.\n"
+            + "{Detalle}\n\nComentario: {Motivo}\n\nDetalle: {Enlace}" + Pie),
+
+        EventosCorreo.VigenciaProxima => new Plantilla(
+            "[Gestión documental] {Codigo} {Etiqueta} entra en vigor el {Fecha}",
+            "Hola {Destinatario},\n\n{Codigo} {Etiqueta} – {Titulo} ya está aprobada y entrará en vigor el {Fecha}. "
+            + "Hasta entonces sigue siendo la vigente la revisión anterior.\n\nDetalle: {Enlace}" + Pie),
 
         _ => throw new ArgumentOutOfRangeException(nameof(evento), evento, "Evento de correo desconocido."),
     };

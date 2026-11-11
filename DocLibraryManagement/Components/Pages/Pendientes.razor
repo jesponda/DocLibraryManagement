@@ -3,8 +3,10 @@
 @rendermode InteractiveServer
 @inherits PaginaBase
 @using DocLibraryManagement.Application.Flujo
+@using DocLibraryManagement.Application.Vencimientos
 @using DocLibraryManagement.Domain
 @inject IFlujoService Flujo
+@inject IVencimientosService Vencimientos
 
 <PageTitle>Mis tareas</PageTitle>
 
@@ -12,40 +14,72 @@
 
 <Mensajes Error="@Error" />
 
-@if (tareas is null)
+@if (tareas is null || solicitudes is null)
 {
     <p>Cargando…</p>
 }
-else if (tareas.Count == 0)
+else if (tareas.Count == 0 && solicitudes.Count == 0)
 {
     <p class="text-muted">No tienes documentos esperando tu decisión.</p>
 }
 else
 {
-    <table class="table table-sm align-middle">
-        <thead><tr><th>Documento</th><th>Título</th><th>Revisión</th><th>Etapa</th><th>Desde</th><th></th></tr></thead>
-        <tbody>
-        @foreach (var t in tareas)
-        {
-            <tr>
-                <td><code>@t.Codigo</code></td>
-                <td>@t.Titulo</td>
-                <td>@t.Etiqueta</td>
-                <td>@t.NombrePaso <span class="text-muted small">(@(t.Clase == TipoPaso.Revision ? "revisión" : "aprobación"))</span></td>
-                <td>@t.DesdeUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                <td><a class="btn btn-sm btn-primary" href="documentos/@t.DocumentoId">Revisar</a></td>
-            </tr>
-        }
-        </tbody>
-    </table>
+    @if (tareas.Count > 0)
+    {
+        <table class="table table-sm align-middle">
+            <thead><tr><th>Documento</th><th>Título</th><th>Revisión</th><th>Etapa</th><th>Desde</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var t in tareas)
+            {
+                <tr>
+                    <td><code>@t.Codigo</code></td>
+                    <td>@t.Titulo</td>
+                    <td>@t.Etiqueta</td>
+                    <td>@t.NombrePaso <span class="text-muted small">(@(t.Clase == TipoPaso.Revision ? "revisión" : "aprobación"))</span></td>
+                    <td>@t.DesdeUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                    <td><a class="btn btn-sm btn-primary" href="documentos/@t.DocumentoId">Revisar</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+
+    @if (solicitudes.Count > 0)
+    {
+        <h2 class="h5 mt-4">Revisiones periódicas por decidir</h2>
+        <p class="text-muted">Documentos que su responsable declaró <em>revisados sin cambios</em> y esperan que los apruebes como dueño del área.</p>
+        <table class="table table-sm align-middle">
+            <thead><tr><th>Documento</th><th>Título</th><th>Revisión</th><th>Propuso</th><th>Comentario</th><th>Desde</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var s in solicitudes)
+            {
+                <tr>
+                    <td><code>@s.CodigoDocumento</code></td>
+                    <td>@s.Titulo</td>
+                    <td>@s.Etiqueta</td>
+                    <td>@s.Solicitante</td>
+                    <td>@s.Comentario</td>
+                    <td>@s.FechaSolicitudUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                    <td><a class="btn btn-sm btn-primary" href="documentos/@s.DocumentoId">Decidir</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
 }
 
 @code {
     private IReadOnlyList<TareaPendienteDto>? tareas;
+    private IReadOnlyList<SolicitudSinCambiosDto>? solicitudes;
 
     protected override async Task OnInitializedAsync()
     {
-        await EjecutarAsync(async a => tareas = await Flujo.MisTareasAsync(a));
+        await EjecutarAsync(async a =>
+        {
+            tareas = await Flujo.MisTareasAsync(a);
+            solicitudes = await Vencimientos.PendientesDeDecisionAsync(a);
+        });
         tareas ??= [];
+        solicitudes ??= [];
     }
 }

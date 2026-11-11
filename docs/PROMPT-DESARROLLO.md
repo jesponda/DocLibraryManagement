@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Versión del documento | 1.8 |
+| Versión del documento | 1.9 |
 | Fecha | 2026-11-10 |
 | Estado | Aprobado para iniciar Fase 1 |
 | Norma base | ISO 9001:2015 cláusula 7.5 (Información documentada), estructura Annex SL |
@@ -303,7 +303,7 @@ Se entrega en tres tramos: **4A** correo, **4B** vencimientos, **4C** reportes.
 - Reportes: documentos vencidos/por vencer, tareas pendientes por usuario, historial de revisiones por documento.
 - **Aceptación:** con reloj simulado, se generan las alertas a 30 y 7 días, el estado "Vencido" y el escalamiento.
 
-#### Tramo 4A – Correo *(construido, pendiente de validar)*
+#### Tramo 4A – Correo *(construido y validado)*
 Decisiones:
 - **Cola en BD** (`Notificaciones`): estados Pendiente / Procesando / Enviado / Error, con reintentos de espera exponencial
   (`MinutosReintento` × 2^(n−1), hasta `MaximoIntentos`). El aviso se encola **en la misma transacción** que el cambio de negocio
@@ -323,10 +323,24 @@ Decisiones:
 - Pantalla `/administracion/correo` (solo Administrador): cola con filtro, último error y *Reintentar* para las en Error
   (queda en la bitácora). Avisa claramente cuando el modo es `Desactivado`.
 
-#### Tramo 4B – Vencimientos *(pendiente)*
-Alertas a 30 y 7 días al responsable; estado derivado «Vencido» (el documento sigue Vigente) con escalamiento al **dueño del
-área** (si no hay, a los Administradores); «Revisado sin cambios» propuesto por el responsable con comentario y aprobado por el
-dueño en una sola etapa, que extiende el vencimiento; aviso de vigencia diferida próxima. Idempotente por `Notificacion.Clave`.
+#### Tramo 4B – Vencimientos *(construido, pendiente de validar)*
+Decisiones:
+- **«Vencido» es un estado derivado** de `FechaProximaRevisionUtc` (no se guarda): el documento sigue Vigente y se marca en
+  pantalla (panel de la revisión, insignia en lista maestra y visor).
+- **Avisos** (proceso de fondo `TareasDeFondo`): a 30 y a 7 días al responsable (límites inclusivos; si la primera vez que se
+  nota faltan <7 días, solo sale el urgente); al vencer, al responsable y **escalamiento al dueño del área** (si no hay, está
+  inactivo o es el mismo responsable → a los Administradores); y **vigencia próxima** (3 días antes) al autor y al responsable.
+- **Idempotencia** por `Notificacion.Clave` = tipo + revisión + marca de la fecha + destinatario: no se duplica al repetir
+  el proceso y, al extenderse la fecha, el ciclo siguiente vuelve a avisar.
+- **«Revisado sin cambios»:** lo propone el responsable (o un Administrador) con comentario obligatorio, **solo desde 30 días
+  antes** del vencimiento o ya vencido; lo decide el **dueño del área** (o un Administrador) **en una sola etapa**; quien propone
+  nunca decide. Aprobar extiende **un periodo completo desde la fecha vigente** (si aún no vence) o **desde hoy** (si ya venció);
+  rechazar exige motivo y no cambia la fecha. Una sola pendiente por revisión (índice único filtrado); se cancela sola si la
+  revisión deja de ser la vigente. Bitácora `Revision.SinCambios.*`.
+- Nueva tabla `SolicitudesSinCambios` (migración `SolicitudesSinCambios`).
+- **Acceso del dueño del área** (hallado en la validación manual): el dueño (con rol Aprobador vigente) puede ver, solo lectura,
+  los documentos de su área aunque nunca haya tenido una etapa; sin eso no podía abrir el documento para decidir. No se abre el
+  módulo Documentos a Revisor/Aprobador (listaría borradores ajenos); el seguimiento del área irá en el reporte de vencimientos de 4C.
 
 #### Tramo 4C – Reportes *(pendiente)*
 Vencidos y por vencer, tareas pendientes por usuario, historial de revisiones por documento, **pantalla de consulta de la
@@ -391,6 +405,7 @@ Pendientes de datos reales (no bloquean la Fase 1, bloquean la puesta en producc
 | 1.6 | 2026-11-09 | Fase 3 construida (lista maestra con exportación, búsqueda por contenido, visor y enlace estable). La búsqueda no usa SQL Server Full-Text porque el LocalDB de desarrollo no lo incluye. `ActivadorDeVigencias` pasa a `TareasDeFondo`. |
 | 1.7 | 2026-11-09 | Fase 3 validada. Ajuste: el Administrador puede cambiar la fecha o anular (devolver a borrador) una aprobación que aún no entra en vigor. Nuevo estado de flujo `Revocado`. |
 | 1.8 | 2026-11-10 | Fase 4 dividida en tramos 4A/4B/4C. Tramo 4A construido: cola de correo en BD con reintentos, plantillas, modos Desactivado/Carpeta/Smtp, avisos de los eventos existentes y pantallas de usuarios y de cola. |
+| 1.9 | 2026-11-10 | Tramo 4A validado. Tramo 4B construido: avisos a 30/7 días, «Vencido» derivado, escalamiento al dueño del área, «revisado sin cambios» (propone el responsable, decide el dueño en una etapa) y aviso de vigencia próxima. |
 
 ## 14. Referencias
 
