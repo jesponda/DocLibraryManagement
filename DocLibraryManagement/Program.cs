@@ -66,6 +66,7 @@ if (ConfiguracionSeguridad.ObtenerModo(app.Configuration) == ConfiguracionSeguri
 
 app.MapEndpointsArchivos();
 app.MapEndpointsListaMaestra();
+app.MapEndpointsReportes();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

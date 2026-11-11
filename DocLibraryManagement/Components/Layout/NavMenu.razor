@@ -50,6 +50,22 @@
             </div>
         </AuthorizeView>
 
+        <AuthorizeView Roles="Administrador,Auditor,Autor,Aprobador">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="reportes" Match="NavLinkMatch.Prefix">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Reportes
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Administrador,Auditor">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="auditoria" Match="NavLinkMatch.Prefix">
+                    <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Bitácora
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
         <AuthorizeView Policy="@Politicas.PuedeAdministrar">
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="administracion">

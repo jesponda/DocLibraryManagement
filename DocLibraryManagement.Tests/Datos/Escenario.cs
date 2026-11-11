@@ -5,6 +5,7 @@ using DocLibraryManagement.Application.Consulta;
 using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Application.Flujo;
+using DocLibraryManagement.Application.Reportes;
 using DocLibraryManagement.Application.Usuarios;
 using DocLibraryManagement.Application.Vencimientos;
 using DocLibraryManagement.Domain;
@@ -91,6 +92,12 @@ public sealed class Escenario : IDisposable
 
     /// <summary>El remitente falso al que van todos los correos del escenario.</summary>
     public CorreoFalso CorreoSalida { get; } = new();
+
+    public IReportesService Reportes => _scope.ServiceProvider.GetRequiredService<IReportesService>();
+
+    public IAuditoriaService Auditoria => _scope.ServiceProvider.GetRequiredService<IAuditoriaService>();
+
+    public IExportadorTablas Exportador => _scope.ServiceProvider.GetRequiredService<IExportadorTablas>();
 
     public IVencimientosService Vencimientos => _scope.ServiceProvider.GetRequiredService<IVencimientosService>();
 

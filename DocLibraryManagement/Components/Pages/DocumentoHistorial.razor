@@ -1,0 +1,165 @@
+@page "/documentos/{Id:int}/historial"
+@attribute [Authorize(Roles = "Autor,Administrador,Auditor,Revisor,Aprobador")]
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Reportes
+@using DocLibraryManagement.Domain
+@inject IReportesService Reportes
+
+<PageTitle>Historial @(historial?.Codigo)</PageTitle>
+
+<p><a href="documentos/@Id">← Documento</a></p>
+
+<Mensajes Error="@Error" />
+
+@if (historial is not null)
+{
+    <h1>Historial de <code>@historial.Codigo</code></h1>
+    <h2 class="h4">@historial.Titulo</h2>
+
+    <dl class="row" style="max-width: 50rem">
+        <dt class="col-sm-3">Área</dt><dd class="col-sm-9">@historial.Area</dd>
+        <dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">@historial.Tipo</dd>
+        <dt class="col-sm-3">Responsable</dt><dd class="col-sm-9">@historial.Responsable</dd>
+        <dt class="col-sm-3">Creado</dt><dd class="col-sm-9">@historial.FechaCreacionUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+        <dt class="col-sm-3">Estado</dt><dd class="col-sm-9">@Presentacion.NombreEstado(historial.Estado)</dd>
+    </dl>
+
+    <p>
+        Exportar el historial:
+        <a href="documentos/@Id/historial/exportar?formato=xlsx">Excel</a> ·
+        <a href="documentos/@Id/historial/exportar?formato=csv">CSV</a>
+        <AuthorizeView Roles="Administrador,Auditor">
+            · <a href="auditoria?entidad=Documento&amp;identificador=@Uri.EscapeDataString(historial.Codigo)">Ver su bitácora de auditoría</a>
+        </AuthorizeView>
+    </p>
+
+    @foreach (var r in historial.Revisiones)
+    {
+        <div class="card mb-3" style="max-width: 62rem">
+            <div class="card-header d-flex justify-content-between">
+                <strong>@r.Etiqueta · @r.MotivoCambio</strong>
+                <span class="badge text-bg-secondary">@Presentacion.NombreEstado(r.Estado)</span>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-2">
+                    <dt class="col-sm-3">Autor</dt><dd class="col-sm-9">@r.Autor</dd>
+                    <dt class="col-sm-3">Creada</dt><dd class="col-sm-9">@r.FechaCreacionUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+                    @if (r.FechaAprobacionUtc is { } aprobacion)
+                    {
+                        <dt class="col-sm-3">Aprobada</dt><dd class="col-sm-9">@aprobacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+                    }
+                    @if (r.FechaVigenciaUtc is { } vigencia)
+                    {
+                        <dt class="col-sm-3">Vigente desde</dt><dd class="col-sm-9">@vigencia.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+                    }
+                    @if (r.FechaProximaRevisionUtc is { } proxima)
+                    {
+                        <dt class="col-sm-3">Próxima revisión</dt><dd class="col-sm-9">@proxima.ToLocalTime().ToString("dd/MM/yyyy")</dd>
+                    }
+                    @if (!string.IsNullOrEmpty(r.DescripcionCambio))
+                    {
+                        <dt class="col-sm-3">Descripción</dt><dd class="col-sm-9">@r.DescripcionCambio</dd>
+                    }
+                </dl>
+
+                @if (r.Envios.Count == 0)
+                {
+                    <p class="text-muted mb-2">Esta revisión no se envió a aprobación.</p>
+                }
+
+                @foreach (var e in r.Envios)
+                {
+                    <h3 class="h6 mt-3">
+                        Envío @e.Numero · <span class="badge text-bg-light border">@ReglasReporte.NombreEstadoFlujo(e.Estado)</span>
+                        <small class="text-muted">
+                            por @e.IniciadoPor el @e.FechaInicioUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            @if (e.FechaFinUtc is { } fin)
+                            {
+                                <span> · terminó el @fin.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                            }
+                        </small>
+                    </h3>
+                    @if (!string.IsNullOrEmpty(e.MotivoCierre))
+                    {
+                        <p class="mb-1"><em>Motivo del cierre:</em> @e.MotivoCierre</p>
+                    }
+
+                    <table class="table table-sm align-middle mb-2">
+                        <thead><tr><th>#</th><th>Etapa</th><th>Asignada a</th><th>Resultado</th><th>Decidió</th><th>Comentario</th></tr></thead>
+                        <tbody>
+                        @foreach (var p in e.Pasos)
+                        {
+                            <tr>
+                                <td>@p.Orden</td>
+                                <td>@p.Nombre <span class="text-muted small">(@(p.Clase == TipoPaso.Revision ? "revisión" : "aprobación"))</span></td>
+                                <td>@p.AsignadoA</td>
+                                <td><span class="badge @ClasePaso(p.Estado)">@ReglasReporte.NombreEstadoPaso(p.Estado)</span></td>
+                                <td>
+                                    @(p.DecididoPor ?? "—")
+                                    @if (p.FechaDecisionUtc is { } fecha)
+                                    {
+                                        <div class="small text-muted">@fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                                    }
+                                </td>
+                                <td>@p.Comentario</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+
+                @if (r.SinCambios.Count > 0)
+                {
+                    <h3 class="h6 mt-3">«Revisado sin cambios»</h3>
+                    <table class="table table-sm align-middle mb-0">
+                        <thead><tr><th>Fecha</th><th>Propuso</th><th>Comentario</th><th>Resultado</th><th>Decidió</th></tr></thead>
+                        <tbody>
+                        @foreach (var s in r.SinCambios)
+                        {
+                            <tr>
+                                <td>@s.FechaSolicitudUtc.ToLocalTime().ToString("dd/MM/yyyy")</td>
+                                <td>@s.Solicitante</td>
+                                <td>@s.Comentario</td>
+                                <td>
+                                    @ReglasReporte.NombreSolicitud(s.Estado)
+                                    @if (s.FechaProximaNuevaUtc is { } nueva)
+                                    {
+                                        <div class="small text-muted">Próxima revisión: @nueva.ToLocalTime().ToString("dd/MM/yyyy")</div>
+                                    }
+                                </td>
+                                <td>
+                                    @(s.DecididaPor ?? "—")
+                                    @if (!string.IsNullOrEmpty(s.ComentarioDecision))
+                                    {
+                                        <div class="small text-muted">@s.ComentarioDecision</div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private HistorialDocumentoDto? historial;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        historial = null;
+        await EjecutarAsync(async a => historial = await Reportes.HistorialDocumentoAsync(a, Id));
+    }
+
+    private static string ClasePaso(EstadoPaso estado) => estado switch
+    {
+        EstadoPaso.Aprobado => "text-bg-success",
+        EstadoPaso.Rechazado => "text-bg-danger",
+        EstadoPaso.Pendiente => "text-bg-warning",
+        _ => "text-bg-secondary",
+    };
+}

@@ -30,6 +30,7 @@ else
 {
     <h1><code>@doc.Codigo</code></h1>
     <h2 class="h4">@doc.Titulo</h2>
+    <p><a class="btn btn-outline-secondary btn-sm" href="documentos/@doc.Id/historial">Historial completo</a></p>
 
     <dl class="row" style="max-width: 50rem">
         <dt class="col-sm-3">Área</dt><dd class="col-sm-9">@doc.Area</dd>
@@ -146,6 +147,41 @@ else
     @if (esAdmin && doc.Estado == EstadoDocumento.Activo)
     {
         <div class="mb-3" style="max-width: 50rem">
+            <button class="btn btn-outline-secondary btn-sm" @onclick="AlternarCambioResponsableAsync">Cambiar responsable…</button>
+            @if (cambiandoResponsable)
+            {
+                <div class="card border-secondary mt-2">
+                    <div class="card-body">
+                        <p class="mb-2">
+                            Responsable actual: <strong>@doc.Responsable</strong>. La persona nueva recibirá los avisos de revisión periódica de este
+                            documento y podrá declararlo <em>revisado sin cambios</em>. Solo aparecen personas activas que son Autores del área o
+                            Administradores y que ya iniciaron sesión.
+                        </p>
+                        @if (candidatos.Count == 0)
+                        {
+                            <div class="alert alert-warning mb-2">No hay otra persona que pueda ser la responsable. Una persona nueva debe iniciar sesión al menos una vez.</div>
+                        }
+                        else
+                        {
+                            <label class="form-label" for="nuevoResponsable">Nuevo responsable</label>
+                            <select id="nuevoResponsable" class="form-select mb-2" @bind="nuevoResponsable">
+                                <option value="">Elige a una persona…</option>
+                                @foreach (var c in candidatos)
+                                {
+                                    <option value="@c.Id">@c.NombreVisible (@c.Identificador)</option>
+                                }
+                            </select>
+                            <label class="form-label" for="motivoResponsable">Motivo del cambio</label>
+                            <input id="motivoResponsable" class="form-control mb-2" maxlength="1000" @bind="motivoResponsable" />
+                            <button class="btn btn-primary" @onclick="CambiarResponsableAsync">Cambiar responsable</button>
+                        }
+                        <button class="btn btn-link" @onclick="() => cambiandoResponsable = false">Cerrar</button>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="mb-3" style="max-width: 50rem">
             <button class="btn btn-outline-danger btn-sm" @onclick="() => retirando = !retirando">Retirar documento…</button>
             @if (retirando)
             {
@@ -198,6 +234,11 @@ else
 
     private bool retirando;
     private string motivoRetiro = "";
+
+    private bool cambiandoResponsable;
+    private IReadOnlyList<CandidatoResponsableDto> candidatos = [];
+    private string nuevoResponsable = "";
+    private string motivoResponsable = "";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -256,6 +297,33 @@ else
             revisionId = creada!.Id; // se abre el panel de la revisión recién creada
             await CargarAsync();
             Exito = $"Se abrió la {creada.Etiqueta} en borrador. Sube el PDF y envíala a revisión.";
+        }
+    }
+
+    private async Task AlternarCambioResponsableAsync()
+    {
+        cambiandoResponsable = !cambiandoResponsable;
+        if (cambiandoResponsable)
+        {
+            await EjecutarAsync(async a => candidatos = await Servicio.CandidatosResponsableAsync(a, Id));
+        }
+    }
+
+    private async Task CambiarResponsableAsync()
+    {
+        if (!Guid.TryParse(nuevoResponsable, out var nuevoId))
+        {
+            Error = "Elige a la persona que será la responsable.";
+            return;
+        }
+
+        var nombre = candidatos.FirstOrDefault(c => c.Id == nuevoId)?.NombreVisible ?? "la persona elegida";
+        if (await EjecutarAsync(a => Servicio.CambiarResponsableAsync(a, Id, nuevoId, motivoResponsable)))
+        {
+            cambiandoResponsable = false;
+            nuevoResponsable = motivoResponsable = "";
+            await CargarAsync();
+            Exito = $"El responsable ahora es {nombre}.";
         }
     }
 

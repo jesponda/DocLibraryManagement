@@ -43,10 +43,11 @@ aprobó, cuál es la revisión **vigente**, y garantiza que nadie use una revisi
 | 3+ | Ajuste: el Administrador puede cambiar la fecha o anular una aprobación que aún no entra en vigor | **Construido; validación manual pendiente** |
 | 4A | Correo: cola en BD con reintentos, plantillas en español, SMTP/carpeta, avisos de los eventos existentes, pantallas de usuarios y de cola | Terminada y validada |
 | 4B | Vencimientos de la revisión periódica: alertas a 30 y 7 días, estado «Vencido», escalamiento, «revisado sin cambios» | **Construido; validación manual pendiente** |
-| 4C | Reportes, pantalla de la bitácora, cambio de responsable | **No iniciada** |
+| 4B+ | Ajuste: el dueño del área ve (solo lectura) los documentos de su área | Terminada y validada |
+| 4C | Reportes (vencimientos, tareas por persona, historial por documento), pantalla de la bitácora, cambio de responsable | **Construido; validación manual pendiente** |
 | 5 | Endurecimiento, guía de operación, script de despliegue | **No iniciada** |
 
-**Verificación automatizada:** 738 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
+**Verificación automatizada:** 922 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
 **No hay pruebas de interfaz en navegador:** los clics dentro de las pantallas (subir con el selector de archivos, elegir
 personas en desplegables, botones) solo se han validado manualmente.
 
@@ -240,6 +241,7 @@ DocLibraryManagement/
 │   │   ├── ReglasBusqueda.cs          Términos, escape de LIKE, fragmento con resaltado
 │   │   └── Servicios.cs               IExtractorTexto, IExportadorListaMaestra, IIndexadorService
 │   ├── Vencimientos/Vencimientos.cs   ReglasVencimiento (30/7 días, nueva fecha), IVencimientosService, DTOs
+│   ├── Reportes/Reportes.cs           ReglasReporte, contratos y DTOs de reportes/bitácora/exportación, TablasReporte (datos → tabla)
 │   └── Usuarios/IUsuarioSincronizador.cs
 │
 ├── DocLibraryManagement.Infrastructure/  (≈2,900 líneas)
@@ -253,6 +255,10 @@ DocLibraryManagement/
 │   │   └── Migraciones/               7 migraciones (Inicial, UsuarioRolesCopia, FlujoYArchivos, PublicacionYDueno, MotivoCierreFlujo, Notificaciones, SolicitudesSinCambios)
 │   ├── Catalogo/CatalogoService.cs
 │   ├── Vencimientos/VencimientosService.cs  Avisos 30/7/vencido/escalamiento (idempotentes por clave), «revisado sin cambios»
+│   ├── Reportes/
+│   │   ├── ReportesService.cs         Vencimientos, tareas pendientes e historial de documento (alcance por rol)
+│   │   ├── AuditoriaService.cs        Consulta y exportación de la bitácora (solo lectura; Administrador y Auditor)
+│   │   └── ExportadorTablas.cs        CSV (BOM, anti-fórmulas) y Excel genéricos
 │   ├── Documentos/
 │   │   ├── DocumentoService.cs        Creación con consecutivo seguro ante concurrencia (reintento)
 │   │   ├── RevisionService.cs         Edición de borrador, subida/descarga de archivos, nuevas revisiones, retiro
@@ -283,6 +289,7 @@ DocLibraryManagement/
 │   │   ├── EdicionEnAreaHandler.cs    Autorización por recurso (código de área)
 │   │   ├── ProveedorActor.cs          Arma el Actor desde el usuario autenticado
 │   │   ├── Desarrollo.cs              Usuarios simulados (SOLO Development)
+│   │   ├── EndpointsReportes.cs       Exportaciones de reportes, bitácora e historial (mismos permisos que las pantallas)
 │   │   ├── EndpointsArchivos.cs       GET /archivos/{revisionId}/{pdf|fuente}
 │   │   └── EndpointsListaMaestra.cs   GET /lista-maestra/exportar
 │   └── Components/
@@ -293,13 +300,14 @@ DocLibraryManagement/
 │       ├── Revision/PanelRevisionPeriodica.razor   Vencimiento de la vigente y «revisado sin cambios» (proponer/decidir/retirar)
 │       └── Pages/                     Una página por ruta (ver tabla abajo)
 │
-└── DocLibraryManagement.Tests/        (738 pruebas)
+└── DocLibraryManagement.Tests/        (922 pruebas)
     ├── Datos/                         BaseDatosFixture, Escenario (servicios reales + reloj simulado), GeneradorPdf
     ├── Vencimientos/                  Reglas de 30/7 días, avisos y escalamiento con reloj simulado, «revisado sin cambios»
+    ├── Reportes/                      Reglas puras, exportador (CSV/Excel), vencimientos, tareas, historial y bitácora (alcance por rol)
     ├── Correo/                        Reglas puras, avisos por evento, cola (reintentos, concurrencia), SMTP real local, usuarios
     │                                  (Dobles.cs: remitente falso y servidor SMTP mínimo de verdad)
     ├── Seguridad/ · Catalogo/ · Archivos/ · Flujo/ · Documentos/ · Consulta/
-    └── Web/                           AplicacionWebFixture, WebHttpTests, WebConsultaTests
+    └── Web/                           AplicacionWebFixture, WebHttpTests, WebConsultaTests, WebReportesTests
 ```
 
 ### Rutas de la aplicación
@@ -317,6 +325,12 @@ DocLibraryManagement/
 | `/administracion`, `/areas`, `/tipos`, `/flujos` | Administrador | interactivo | Catálogos y plantillas de flujo |
 | `/administracion/usuarios` | Administrador | interactivo | Usuarios y su correo (capturado o por convención) |
 | `/administracion/correo` | Administrador | interactivo | Cola de correo: estado, último error, reintentar |
+| `/reportes` | Administrador, Auditor, Autor, Aprobador | estático | Índice de reportes |
+| `/reportes/vencimientos` | ídem (alcance por rol, ver §5.8) | estático | Vencidos y por vencer, totales, filtros, exportar |
+| `/reportes/tareas` | ídem (alcance por rol) | estático | Tareas pendientes por persona, exportar |
+| `/auditoria` | Administrador, Auditor | estático | **Bitácora de auditoría**: filtros, paginación, exportar |
+| `/documentos/{id}/historial` | quien puede ver el documento | estático | Historial completo: revisiones, envíos, decisiones |
+| `/reportes/vencimientos/exportar`, `/reportes/tareas/exportar`, `/auditoria/exportar`, `/documentos/{id}/historial/exportar` | los mismos que su pantalla | endpoint | CSV o Excel (`?formato=csv\|xlsx`) con los filtros de la pantalla; sin permiso, `403` |
 | `/archivos/{revisionId}/{pdf\|fuente}` | autenticado + permiso por revisión | endpoint | Descarga con verificación de hash |
 | `/lista-maestra/exportar?formato=csv\|xlsx` | autenticado | endpoint | Exportación con los filtros de la pantalla |
 | `/health` | anónimo | endpoint | Sondeo básico (**no** comprueba la BD) |
@@ -441,6 +455,30 @@ stateDiagram-v2
   insignias «Vencida / Vence pronto / Por vencer» junto a la fecha en la lista maestra y el visor, y las solicitudes por decidir en
   «Mis tareas» del dueño.
 
+### 5.8 Reportes, bitácora y responsable (4C)
+
+- **Alcance de los reportes** (`ReportesService.AreasVisiblesAsync`): Administrador y Auditor ven **todas** las áreas; un Autor,
+  las áreas donde edita; un Aprobador, **las áreas de las que es dueño** (solo si conserva el rol); quien tenga varios roles, la
+  unión. Sin ninguna área (Revisor, Lector, Aprobador que no es dueño…) el servicio responde *AccesoDenegado*. Pedir un área ajena
+  no filtra nada hacia afuera: simplemente no devuelve filas.
+- **Vencimientos:** vigentes de documentos activos con fecha de próxima revisión. Filtro «lo que requiere atención» (por omisión:
+  vencidos y los de 30 días o menos), solo vencidos, por vencer o todos; por área, tipo y texto. Los **totales** (vencidas /
+  por vencer / al día) no dependen del filtro de estado. Los días llevan signo (`-3` = venció hace 3).
+- **Tareas pendientes:** la **etapa vigente** de cada flujo en curso (no las siguientes) más las solicitudes «revisado sin
+  cambios» pendientes, a nombre del dueño del área (o de «Administradores» si no hay dueño, está inactivo o fue quien propuso).
+  Los días cuentan desde que **le tocó** a esa persona (la decisión de la etapa anterior), no desde el envío.
+- **Historial por documento:** todas las revisiones (también canceladas y obsoletas), cada envío con la decisión, la fecha y el
+  comentario de cada etapa, y las solicitudes «sin cambios». Lo ve quien puede ver el documento (gestores, dueño del área, asignados).
+- **Bitácora (`/auditoria`):** solo Administrador y Auditor. Los textos de filtro se buscan **literales** (los comodines `%` `_`
+  no actúan) y sin distinguir mayúsculas ni acentos; la acción es un **prefijo**. Las fechas son días en la hora de la planta.
+- **Exportación (CSV/Excel):** `ExportadorTablas` genérico. El CSV lleva BOM UTF-8 y neutraliza fórmulas en el texto (`=`, `+`, `-`,
+  `@`); **los números (p. ej. `-3` días) no se tocan**. En Excel el texto va siempre como texto literal. Tope de 5,000 filas
+  (la pantalla avisa cuando se supera).
+- **Cambio de responsable** (`DocumentoService.CambiarResponsableAsync`, solo Administrador, con motivo): la persona nueva debe estar
+  **activa y ser Autor del área del documento o Administrador** (según su último acceso). Avisa a la nueva y a la anterior, queda en
+  la bitácora (`Documento.CambiarResponsable`) y los avisos de revisión periódica pasan a la persona nueva. Una solicitud «sin
+  cambios» ya pendiente sigue su curso.
+
 ---
 
 ## 6. Seguridad
@@ -463,8 +501,8 @@ El usuario se identifica por `DOMINIO\usuario` y se **sincroniza en la tabla `Us
 | Lector | Ver lo vigente (todo empleado autenticado lo es) |
 | Autor | Lo anterior + crear/editar borradores **de sus áreas** y enviarlos a revisión |
 | Revisor / Aprobador | Decidir las etapas que se le asignaron |
-| Auditor | Solo lectura de todos los documentos y revisiones (incluidas obsoletas y retiradas). **No existe pantalla de bitácora** (ver [§10](#10-consideraciones-de-diseño-actuales-y-limitaciones)) |
-| Administrador | Catálogos, flujos, dueños de área, retiro; cambia la fecha o anula aprobaciones aún no vigentes; edita en cualquier área |
+| Auditor | Solo lectura de todos los documentos y revisiones (incluidas obsoletas y retiradas), todos los reportes y la **bitácora de auditoría** |
+| Administrador | Catálogos, flujos, dueños de área, retiro; cambia la fecha o anula aprobaciones aún no vigentes; **cambia el responsable de un documento**; edita en cualquier área |
 
 **Los roles y áreas NO se guardan en la BD como fuente de verdad: se calculan de los grupos de AD.** La sección
 `Autorizacion:Grupos` mapea cada grupo a un rol (y, para Autor, a los códigos de área que habilita). El resultado se cachea
@@ -507,10 +545,10 @@ reflejarse.** Existe una copia informativa en `Usuarios.RolesUltimoAcceso` solo 
   la aplicación **no debería tener `UPDATE`/`DELETE`** sobre `Auditoria`. **La capa 2 no está implementada ni documentada en
   un script** (Fase 5): hoy depende de la configuración que haga el equipo de BD. Ver [§9](#9-puesta-en-producción).
 - La **IP es de mejor esfuerzo**: en Blazor Server el `HttpContext` solo existe en la solicitud inicial del circuito.
-- **No hay pantalla para consultar la bitácora** (el requerimiento 7.6 pedía una para Auditor y Administrador, con filtros y
-  exportación; no se construyó). Hoy se consulta directamente en la tabla `Auditoria` con SQL, p. ej.:
-  `SELECT * FROM Auditoria WHERE Entidad = 'Documento' AND EntidadId = 'PRO-CAL-001' ORDER BY Id`.
-  Para documentos, `EntidadId` es el **código** del documento; para catálogos, la abreviatura o el id.
+- **Consulta:** pantalla `/auditoria` (solo Administrador y Auditor) con filtros por fechas, usuario, acción (prefijo, p. ej.
+  `Revision.`), entidad, identificador y texto, paginación y exportación a CSV/Excel. Es **solo lectura** y consultarla **no
+  genera eventos**. Para documentos, `EntidadId` es el **código** del documento; para catálogos, la abreviatura o el id.
+  También se puede consultar con SQL: `SELECT * FROM Auditoria WHERE Entidad = 'Documento' AND EntidadId = 'PRO-CAL-001' ORDER BY Id`.
 
 ### 6.6 Otras medidas presentes
 
@@ -546,7 +584,7 @@ niveles es `__`) o *user secrets* en desarrollo. **No guardar secretos en el rep
 | `Correo:CarpetaSalida` | `App_Data/correo` | Destino del modo Carpeta | No |
 | `Correo:MaximoIntentos` / `MinutosReintento` | `5` / `5` | Reintentos; la espera se duplica en cada intento (5, 10, 20…) | Opcional |
 | `Correo:SegundosEntreEnvios` / `MinutosArriendo` | `30` / `10` | Frecuencia del envío (`0` lo apaga) y tiempo antes de retomar un envío que quedó a medias | Opcional |
-| `Correo:Plantillas:<Evento>:Asunto` / `Cuerpo` | texto en español | Reemplazo de plantilla. Eventos: `TareaAsignada`, `Rechazada`, `Publicada`, `AprobacionRevocada`, `VigenciaReprogramada`, `AlertaVencimiento`, `DocumentoVencido`, `EscalamientoVencido`, `SinCambiosSolicitada`, `SinCambiosResuelta`, `VigenciaProxima`. Marcadores: `{Destinatario}`, `{Codigo}`, `{Etiqueta}`, `{Titulo}`, `{Enlace}`, `{EnlaceVisor}`; según el evento también `{Etapa}`, `{TipoEtapa}`, `{Autor}`, `{Actor}`, `{Motivo}`, `{Fecha}`, `{Dias}`, `{Responsable}`, `{Resultado}`, `{Detalle}`. Un marcador desconocido queda visible en el correo | Opcional |
+| `Correo:Plantillas:<Evento>:Asunto` / `Cuerpo` | texto en español | Reemplazo de plantilla. Eventos: `TareaAsignada`, `Rechazada`, `Publicada`, `AprobacionRevocada`, `VigenciaReprogramada`, `AlertaVencimiento`, `DocumentoVencido`, `EscalamientoVencido`, `SinCambiosSolicitada`, `SinCambiosResuelta`, `VigenciaProxima`, `ResponsableAsignado`, `ResponsableRetirado`. Marcadores: `{Destinatario}`, `{Codigo}`, `{Etiqueta}`, `{Titulo}`, `{Enlace}`, `{EnlaceVisor}`; según el evento también `{Etapa}`, `{TipoEtapa}`, `{Autor}`, `{Actor}`, `{Motivo}`, `{Fecha}`, `{Dias}`, `{Responsable}`, `{Resultado}`, `{Detalle}`. Un marcador desconocido queda visible en el correo | Opcional |
 | `Desarrollo:Personas` | 6 personas (solo `appsettings.Development.json`) | Usuarios simulados | No aplica |
 
 Ejemplos de variables de entorno:
@@ -701,6 +739,9 @@ Decisiones tomadas y su razón. El detalle completo y cronológico está en `doc
 | **«Vencido» derivado de la fecha**, no guardado | Sin job que actualice un estado ni riesgo de inconsistencia; el documento sigue vigente (decisión) | Consultar «vencidos» exige filtrar por fecha (el reporte 4C lo hará) |
 | **Escalamiento a Administradores** usa la copia informativa de roles (`RolesUltimoAcceso`) | No hay forma de listar a los miembros de un grupo de AD desde la aplicación | Un Administrador que nunca ha iniciado sesión no recibe el aviso |
 | **Aviso de «vencido» una sola vez** (no se repite cada semana) | Evita ruido; el estado sigue visible en pantalla y reportes | Si se ignora el correo, nadie vuelve a avisar hasta que se atienda |
+| **Reportes con alcance por área** (Autor: sus áreas; Aprobador: las que es dueño; Admin/Auditor: todas) | Cada quien ve lo que le toca atender sin abrir el módulo Documentos a Revisor/Aprobador (listaría borradores ajenos) | Un Aprobador que no es dueño de ningún área no tiene reportes (usa «Mis tareas») |
+| **Bitácora de solo lectura, sin auditar sus consultas** | Evita que consultar genere ruido; la inmutabilidad queda intacta | No se sabe quién consultó la bitácora |
+| **Candidatos a responsable según la copia de roles y áreas del último acceso** | No se puede consultar a los miembros de un grupo de AD desde la aplicación | Solo aparecen quienes ya iniciaron sesión; una persona nueva debe entrar al menos una vez |
 | **Correo `Desactivado` por defecto** | Un despliegue sin configurar no envía nada ni acumula cola | Hay que activarlo explícitamente |
 
 ### Limitaciones conocidas
@@ -710,7 +751,9 @@ Decisiones tomadas y su razón. El detalle completo y cronológico está en `doc
   sin adjuntos ni resumen diario; probado solo contra un SMTP de prueba local.
 - Vencimientos (4B): los avisos corren con `TareasDeFondo` (por defecto cada 5 min) y requieren correo activado; los clics del panel
   «Revisión periódica» no tienen prueba de navegador (solo el servicio y el renderizado están probados).
-- **Sin pantalla de consulta de la bitácora** (solo SQL directo sobre `Auditoria`; 4C).
+- Reportes (4C): las exportaciones se limitan a 5,000 filas; el cambio de responsable no usa control de concurrencia (dos
+  Administradores cambiándolo a la vez: gana el último, y ambos cambios quedan en la bitácora); los clics de las pantallas
+  nuevas (cambiar responsable, filtros) no tienen prueba de navegador.
 - Sin pruebas de interfaz en navegador.
 - Exportación limitada a 5,000 filas; texto de PDF limitado a 2 millones de caracteres.
 - `/health` no comprueba la BD ni el almacén.
@@ -734,7 +777,7 @@ Decisiones tomadas y su razón. El detalle completo y cronológico está en `doc
   escalamiento al **dueño del área** (si no hay, a los Administradores); acción *«Revisado sin cambios»* propuesta por el
   responsable y aprobada por el dueño en una etapa (extiende el vencimiento, con bitácora); aviso de vigencia diferida próxima.
   Idempotente por `Notificacion.Clave`. Reaprovecha `TareasDeFondo` y `FechaProximaRevisionUtc`.
-- **4C — Reportes:** vencidos/por vencer, tareas pendientes por usuario, historial de revisiones por documento, **pantalla de
+- **4C — Reportes (construido):** vencidos/por vencer, tareas pendientes por usuario, historial de revisiones por documento, **pantalla de
   consulta de la bitácora** (Auditor/Administrador, filtros y exportación) y **cambio de responsable** por el Administrador.
 
 **Fase 5 — Pruebas y endurecimiento**

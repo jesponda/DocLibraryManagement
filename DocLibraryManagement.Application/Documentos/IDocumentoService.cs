@@ -57,4 +57,19 @@ public interface IDocumentoService
 
     /// <summary>Cambia la subárea (clasificación). El área no se puede cambiar: forma parte del código.</summary>
     Task CambiarSubAreaAsync(Actor actor, int documentoId, int? subAreaId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Personas que pueden quedar como responsable del documento: activas, Autores del área del documento (según su último
+    /// acceso) o Administradores, sin contar al responsable actual. Solo Administrador.
+    /// </summary>
+    Task<IReadOnlyList<CandidatoResponsableDto>> CandidatosResponsableAsync(Actor actor, int documentoId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Cambia el responsable de un documento activo (p. ej. porque la persona dejó la planta o cambió de puesto). Solo
+    /// Administrador, con motivo. Avisa a la persona nueva y a la anterior, y queda en la bitácora. Los avisos de revisión
+    /// periódica y el «revisado sin cambios» pasan a la persona nueva.
+    /// </summary>
+    Task CambiarResponsableAsync(Actor actor, int documentoId, Guid nuevoResponsableId, string motivo, CancellationToken ct = default);
 }
+
+public sealed record CandidatoResponsableDto(Guid Id, string NombreVisible, string Identificador);

@@ -2,8 +2,8 @@
 
 | Campo | Valor |
 |---|---|
-| Versión del documento | 1.9 |
-| Fecha | 2026-11-10 |
+| Versión del documento | 1.10 |
+| Fecha | 2026-11-11 |
 | Estado | Aprobado para iniciar Fase 1 |
 | Norma base | ISO 9001:2015 cláusula 7.5 (Información documentada), estructura Annex SL |
 
@@ -323,7 +323,7 @@ Decisiones:
 - Pantalla `/administracion/correo` (solo Administrador): cola con filtro, último error y *Reintentar* para las en Error
   (queda en la bitácora). Avisa claramente cuando el modo es `Desactivado`.
 
-#### Tramo 4B – Vencimientos *(construido, pendiente de validar)*
+#### Tramo 4B – Vencimientos *(construido y validado)*
 Decisiones:
 - **«Vencido» es un estado derivado** de `FechaProximaRevisionUtc` (no se guarda): el documento sigue Vigente y se marca en
   pantalla (panel de la revisión, insignia en lista maestra y visor).
@@ -342,10 +342,22 @@ Decisiones:
   los documentos de su área aunque nunca haya tenido una etapa; sin eso no podía abrir el documento para decidir. No se abre el
   módulo Documentos a Revisor/Aprobador (listaría borradores ajenos); el seguimiento del área irá en el reporte de vencimientos de 4C.
 
-#### Tramo 4C – Reportes *(pendiente)*
-Vencidos y por vencer, tareas pendientes por usuario, historial de revisiones por documento, **pantalla de consulta de la
-bitácora** (Auditor/Administrador, con filtros y exportación) y **cambio de responsable** de un documento por el Administrador
-(motivo obligatorio y bitácora).
+#### Tramo 4C – Reportes *(construido, pendiente de validar)*
+Decisiones:
+- **Alcance por área:** Administrador y Auditor ven todo; un Autor, las áreas donde edita; un Aprobador, las áreas de las que es
+  dueño. Sin ninguna área no hay reporte. No se abre el módulo Documentos a Revisor/Aprobador.
+- **Vencimientos:** vencidos y por vencer (por omisión «lo que requiere atención»: vencidos y ≤30 días), con totales, filtros por
+  estado, área, tipo y texto, días con signo, responsable, dueño y si hay una solicitud «sin cambios» pendiente.
+- **Tareas pendientes por persona:** la etapa vigente de cada flujo en curso y las decisiones «sin cambios» por tomar; los días
+  cuentan desde que le tocó a esa persona.
+- **Historial por documento:** revisiones, envíos con la decisión de cada etapa y solicitudes «sin cambios»; con exportación.
+- **Bitácora:** pantalla de consulta para Auditor y Administrador (fechas, usuario, acción por prefijo, entidad, identificador y
+  texto), solo lectura, paginada y exportable. Consultarla no genera eventos.
+- **Exportación** CSV/Excel de todo lo anterior (BOM, protección contra fórmulas, tope de 5,000 filas); los permisos se vuelven a
+  validar en cada exportación.
+- **Cambio de responsable:** solo Administrador, con motivo; la persona nueva debe ser Autor del área o Administrador y estar
+  activa; avisa a la nueva y a la anterior; los avisos de revisión periódica pasan a la nueva; bitácora.
+- Sin cambios de esquema de base de datos.
 
 ### Fase 5 – Pruebas y endurecimiento
 - Revisión de seguridad, pruebas de integración, datos de ejemplo, script de despliegue y guía de operación.
@@ -406,6 +418,7 @@ Pendientes de datos reales (no bloquean la Fase 1, bloquean la puesta en producc
 | 1.7 | 2026-11-09 | Fase 3 validada. Ajuste: el Administrador puede cambiar la fecha o anular (devolver a borrador) una aprobación que aún no entra en vigor. Nuevo estado de flujo `Revocado`. |
 | 1.8 | 2026-11-10 | Fase 4 dividida en tramos 4A/4B/4C. Tramo 4A construido: cola de correo en BD con reintentos, plantillas, modos Desactivado/Carpeta/Smtp, avisos de los eventos existentes y pantallas de usuarios y de cola. |
 | 1.9 | 2026-11-10 | Tramo 4A validado. Tramo 4B construido: avisos a 30/7 días, «Vencido» derivado, escalamiento al dueño del área, «revisado sin cambios» (propone el responsable, decide el dueño en una etapa) y aviso de vigencia próxima. |
+| 1.10 | 2026-11-11 | Tramo 4B validado. Tramo 4C construido: reportes de vencimientos y de tareas por persona, historial por documento, pantalla de la bitácora (Auditor/Administrador), exportación CSV/Excel y cambio de responsable por el Administrador. |
 
 ## 14. Referencias
 

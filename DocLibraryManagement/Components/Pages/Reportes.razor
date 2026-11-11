@@ -1,0 +1,28 @@
+@page "/reportes"
+@attribute [Authorize(Roles = "Administrador,Auditor,Autor,Aprobador")]
+
+<PageTitle>Reportes</PageTitle>
+
+<h1>Reportes</h1>
+<p class="text-muted">Lo que ves en cada reporte depende de tu rol: los Administradores y Auditores ven todas las áreas; un Autor, las áreas donde edita; un Aprobador, las áreas de las que es dueño.</p>
+
+<div class="list-group" style="max-width: 44rem">
+    <a class="list-group-item list-group-item-action" href="reportes/vencimientos">
+        <strong>Vencimientos de la revisión periódica</strong><br />
+        <small class="text-muted">Documentos vencidos y por vencer, con el responsable y si hay una solicitud «revisado sin cambios» pendiente.</small>
+    </a>
+    <a class="list-group-item list-group-item-action" href="reportes/tareas">
+        <strong>Tareas pendientes por persona</strong><br />
+        <small class="text-muted">Quién tiene qué por revisar, aprobar o decidir, y cuántos días lleva esperando.</small>
+    </a>
+    <AuthorizeView Roles="Administrador,Auditor">
+        <a class="list-group-item list-group-item-action" href="auditoria">
+            <strong>Bitácora de auditoría</strong><br />
+            <small class="text-muted">Todo lo que se ha hecho en el sistema: quién, cuándo y qué cambió. Con filtros y exportación.</small>
+        </a>
+    </AuthorizeView>
+</div>
+
+<p class="text-muted mt-3">
+    El <strong>historial completo de un documento</strong> (revisiones, envíos, quién decidió cada etapa) está en su pantalla de detalle, en <em>Documentos</em>.
+</p>

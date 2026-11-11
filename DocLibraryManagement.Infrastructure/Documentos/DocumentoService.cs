@@ -1,15 +1,21 @@
 using DocLibraryManagement.Application.Comun;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Domain;
+using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Infrastructure.Catalogo;
+using DocLibraryManagement.Infrastructure.Correo;
 using DocLibraryManagement.Infrastructure.Persistencia;
 using Microsoft.EntityFrameworkCore;
 
 namespace DocLibraryManagement.Infrastructure.Documentos;
 
-internal sealed class DocumentoService(IDbContextFactory<AppDbContext> fabrica, TimeProvider reloj) : IDocumentoService
+internal sealed class DocumentoService(
+    IDbContextFactory<AppDbContext> fabrica,
+    IEncoladorNotificaciones notificador,
+    TimeProvider reloj) : IDocumentoService
 {
     private const int MaximoTitulo = 300;
+    private const int MaximoMotivo = 1000;
 
     /// <summary>
     /// Intentos ante colisión de consecutivo. Dos autores que crean a la vez en el mismo (tipo, área)
@@ -211,6 +217,102 @@ internal sealed class DocumentoService(IDbContextFactory<AppDbContext> fabrica, 
             anterior, nueva?.Nombre ?? "(sin subárea)");
 
         await db.SaveChangesAsync(ct);
+    }
+
+    // ---------- Responsable ----------
+
+    /// <summary>
+    /// Puede quedar como responsable quien está activo y es Administrador o Autor del área del documento. Se apoya en la copia
+    /// de roles y áreas del último acceso (no hay forma de consultar AD desde aquí): por eso solo aparecen quienes ya entraron.
+    /// </summary>
+    private static bool PuedeSerResponsable(Usuario u, string codigoArea) =>
+        u.Activo
+        && (u.TuvoRolEnUltimoAcceso(RolSistema.Administrador)
+            || (u.TuvoRolEnUltimoAcceso(RolSistema.Autor)
+                && u.AreasUltimoAcceso.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Contains(codigoArea, StringComparer.OrdinalIgnoreCase)));
+
+    public async Task<IReadOnlyList<CandidatoResponsableDto>> CandidatosResponsableAsync(Actor actor, int documentoId, CancellationToken ct = default)
+    {
+        ExigirAdministrador(actor);
+
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var documento = await db.Documentos.AsNoTracking().Include(d => d.Area)
+            .FirstOrDefaultAsync(d => d.Id == documentoId, ct)
+            ?? throw new ReglaNegocioException("El documento no existe.");
+
+        var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && u.Id != documento.ResponsableId).ToListAsync(ct);
+
+        return [.. usuarios.Where(u => PuedeSerResponsable(u, documento.Area!.Codigo))
+            .OrderBy(u => u.NombreVisible)
+            .Select(u => new CandidatoResponsableDto(u.Id, u.NombreVisible, u.Identificador))];
+    }
+
+    public async Task CambiarResponsableAsync(Actor actor, int documentoId, Guid nuevoResponsableId, string motivo, CancellationToken ct = default)
+    {
+        ExigirAdministrador(actor);
+
+        var texto = (motivo ?? "").Trim();
+        if (texto.Length == 0)
+        {
+            throw new ReglaNegocioException("Indica el motivo del cambio de responsable.");
+        }
+
+        if (texto.Length > MaximoMotivo)
+        {
+            throw new ReglaNegocioException($"El motivo no puede pasar de {MaximoMotivo} caracteres.");
+        }
+
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var documento = await db.Documentos.Include(d => d.Area).Include(d => d.Responsable)
+            .FirstOrDefaultAsync(d => d.Id == documentoId, ct)
+            ?? throw new ReglaNegocioException("El documento no existe.");
+
+        if (documento.Estado != EstadoDocumento.Activo)
+        {
+            throw new ReglaNegocioException("El documento está retirado: ya no tiene responsable que atender.");
+        }
+
+        if (documento.ResponsableId == nuevoResponsableId)
+        {
+            throw new ReglaNegocioException("Esa persona ya es la responsable del documento.");
+        }
+
+        var nuevo = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == nuevoResponsableId, ct)
+            ?? throw new ReglaNegocioException("La persona elegida no existe.");
+
+        if (!PuedeSerResponsable(nuevo, documento.Area!.Codigo))
+        {
+            throw new ReglaNegocioException(
+                $"{nuevo.NombreVisible} no puede ser responsable de este documento: debe estar activa y ser Autor del área {documento.Area.Codigo} o Administrador.");
+        }
+
+        var anterior = documento.Responsable!;
+        documento.ResponsableId = nuevo.Id;
+
+        Bitacora.Registrar(db, reloj, actor, "Documento.CambiarResponsable", nameof(Documento), documento.Codigo,
+            anterior: $"{anterior.NombreVisible} ({anterior.Identificador})", nuevo: $"{nuevo.NombreVisible} ({nuevo.Identificador})",
+            comentario: texto);
+
+        // Avisan la persona nueva y la anterior, salvo que sea quien hace el cambio. Mismo guardado que el cambio: si falla, no sale nada.
+        var valores = notificador.ValoresBase(documento, "");
+        valores["Actor"] = await notificador.NombreVisibleAsync(db, actor.Identificador, ct);
+        valores["Motivo"] = texto;
+        valores["Responsable"] = nuevo.NombreVisible;
+        await notificador.EncolarAsync(db, EventosCorreo.ResponsableAsignado, nuevo.Id, valores, documento.Codigo,
+            omitirIdentificador: actor.Identificador, ct: ct);
+        await notificador.EncolarAsync(db, EventosCorreo.ResponsableRetirado, anterior.Id, valores, documento.Codigo,
+            omitirIdentificador: actor.Identificador, ct: ct);
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static void ExigirAdministrador(Actor actor)
+    {
+        if (!actor.EsAdministrador)
+        {
+            throw new AccesoDenegadoException("Solo un Administrador puede cambiar el responsable de un documento.");
+        }
     }
 
     private static async Task<DocumentoDetalleDto?> ObtenerInternoAsync(AppDbContext db, int id, CancellationToken ct)

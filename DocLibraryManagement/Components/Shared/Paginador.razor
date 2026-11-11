@@ -1,0 +1,23 @@
+@* Paginación para las pantallas de consulta (estáticas): cada enlace es una URL con los filtros y el número de página. *@
+@if (Total > 1)
+{
+    <nav aria-label="Páginas">
+        <ul class="pagination pagination-sm">
+            <li class="page-item @(Actual <= 1 ? "disabled" : "")">
+                <a class="page-link" href="@Enlace(Actual - 1)">Anterior</a>
+            </li>
+            <li class="page-item disabled"><span class="page-link">Página @Actual de @Total</span></li>
+            <li class="page-item @(Actual >= Total ? "disabled" : "")">
+                <a class="page-link" href="@Enlace(Actual + 1)">Siguiente</a>
+            </li>
+        </ul>
+    </nav>
+}
+
+@code {
+    [Parameter, EditorRequired] public int Actual { get; set; }
+
+    [Parameter, EditorRequired] public int Total { get; set; }
+
+    [Parameter, EditorRequired] public Func<int, string> Enlace { get; set; } = _ => "";
+}

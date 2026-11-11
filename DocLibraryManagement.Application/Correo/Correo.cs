@@ -91,11 +91,16 @@ public static class EventosCorreo
     public const string SinCambiosResuelta = nameof(SinCambiosResuelta);
     public const string VigenciaProxima = nameof(VigenciaProxima);
 
+    // Cambio de responsable de un documento
+    public const string ResponsableAsignado = nameof(ResponsableAsignado);
+    public const string ResponsableRetirado = nameof(ResponsableRetirado);
+
     /// <summary>Todos los eventos con plantilla.</summary>
     public static IReadOnlyList<string> Todos { get; } =
     [
         TareaAsignada, Rechazada, Publicada, AprobacionRevocada, VigenciaReprogramada,
         AlertaVencimiento, DocumentoVencido, EscalamientoVencido, SinCambiosSolicitada, SinCambiosResuelta, VigenciaProxima,
+        ResponsableAsignado, ResponsableRetirado,
     ];
 }
 
@@ -165,6 +170,18 @@ public static class PlantillasCorreo
             "[Gestión documental] {Codigo} {Etiqueta} entra en vigor el {Fecha}",
             "Hola {Destinatario},\n\n{Codigo} {Etiqueta} – {Titulo} ya está aprobada y entrará en vigor el {Fecha}. "
             + "Hasta entonces sigue siendo la vigente la revisión anterior.\n\nDetalle: {Enlace}" + Pie),
+
+        EventosCorreo.ResponsableAsignado => new Plantilla(
+            "[Gestión documental] Ahora eres responsable de {Codigo}",
+            "Hola {Destinatario},\n\n{Actor} te asignó como responsable del documento {Codigo} – {Titulo}.\n"
+            + "Desde ahora recibes sus avisos de revisión periódica y eres quien puede declararlo «Revisado sin cambios».\n\n"
+            + "Motivo: {Motivo}\n\nDetalle: {Enlace}" + Pie),
+
+        EventosCorreo.ResponsableRetirado => new Plantilla(
+            "[Gestión documental] Ya no eres responsable de {Codigo}",
+            "Hola {Destinatario},\n\n{Actor} cambió el responsable del documento {Codigo} – {Titulo}. "
+            + "Ya no eres su responsable ni recibirás sus avisos de revisión periódica.\nNuevo responsable: {Responsable}.\n\n"
+            + "Motivo: {Motivo}\n\nDetalle: {Enlace}" + Pie),
 
         _ => throw new ArgumentOutOfRangeException(nameof(evento), evento, "Evento de correo desconocido."),
     };

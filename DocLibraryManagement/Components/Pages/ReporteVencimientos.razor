@@ -1,0 +1,170 @@
+@page "/reportes/vencimientos"
+@attribute [Authorize(Roles = "Administrador,Auditor,Autor,Aprobador")]
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Catalogo
+@using DocLibraryManagement.Application.Consulta
+@using DocLibraryManagement.Application.Reportes
+@using DocLibraryManagement.Application.Vencimientos
+@inject IReportesService Reportes
+@inject ICatalogoService Catalogo
+
+<PageTitle>Vencimientos</PageTitle>
+
+<p><a href="reportes">← Reportes</a></p>
+<h1>Vencimientos de la revisión periódica</h1>
+<p class="text-muted">
+    Revisiones vigentes según su fecha de próxima revisión. Un documento vencido <strong>sigue vigente</strong>: solo se marca para que se atienda.
+</p>
+
+<Mensajes Error="@Error" />
+
+<form method="get" class="row g-2 mb-3" style="max-width: 70rem">
+    <div class="col-md-3">
+        <label class="form-label" for="estado">Mostrar</label>
+        <select id="estado" name="estado" class="form-select">
+            <option value="0" selected="@(EstadoActual == FiltroEstadoVencimiento.ConAviso)">Lo que requiere atención</option>
+            <option value="1" selected="@(EstadoActual == FiltroEstadoVencimiento.SoloVencidos)">Solo vencidos</option>
+            <option value="2" selected="@(EstadoActual == FiltroEstadoVencimiento.PorVencer)">Por vencer (30 días o menos)</option>
+            <option value="3" selected="@(EstadoActual == FiltroEstadoVencimiento.Todos)">Todos los vigentes</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="area">Área</label>
+        <select id="area" name="area" class="form-select">
+            <option value="">Todas</option>
+            @foreach (var a in areas)
+            {
+                <option value="@a.Id" selected="@(a.Id == Area)">@a.Codigo – @a.Nombre</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="tipo">Tipo</label>
+        <select id="tipo" name="tipo" class="form-select">
+            <option value="">Todos</option>
+            @foreach (var t in tipos)
+            {
+                <option value="@t.Id" selected="@(t.Id == Tipo)">@t.Nombre</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="texto">Código o título</label>
+        <input id="texto" name="texto" class="form-control" maxlength="200" value="@Texto" />
+    </div>
+    <div class="col-md-2 d-flex align-items-end gap-2">
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+        <a class="btn btn-link" href="reportes/vencimientos">Limpiar</a>
+    </div>
+</form>
+
+@if (reporte is not null)
+{
+    var totales = reporte.Totales;
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <a class="btn btn-outline-danger" href="@EnlaceEstado(FiltroEstadoVencimiento.SoloVencidos)">Vencidas <span class="badge text-bg-danger">@totales.Vencidos</span></a>
+        <a class="btn btn-outline-warning" href="@EnlaceEstado(FiltroEstadoVencimiento.PorVencer)" title="Vencen en 30 días o menos; entre ellas, las que vencen en 7 días o menos">
+            Por vencer (30 días o menos) <span class="badge text-bg-warning">@(totales.Urgentes + totales.PorVencer)</span>
+            <small>· @totales.Urgentes en 7 días o menos</small>
+        </a>
+        <a class="btn btn-outline-success" href="@EnlaceEstado(FiltroEstadoVencimiento.Todos)">Al día <span class="badge text-bg-success">@totales.AlDia</span></a>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="text-muted">@reporte.Filas.Total documento(s)</span>
+        <span>
+            Exportar:
+            <a href="@EnlaceExportar("xlsx")">Excel</a> ·
+            <a href="@EnlaceExportar("csv")">CSV</a>
+        </span>
+    </div>
+
+    @if (reporte.Filas.Total > ReglasBusqueda.MaximoFilasExportacion)
+    {
+        <div class="alert alert-warning py-2">La exportación incluye solo las primeras @ReglasBusqueda.MaximoFilasExportacion filas. Acota los filtros para obtener el resto.</div>
+    }
+
+    @if (reporte.Filas.Elementos.Count == 0)
+    {
+        <p class="text-muted">No hay documentos que coincidan con este filtro.</p>
+    }
+    else
+    {
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr><th>Código</th><th>Título</th><th>Área</th><th>Rev.</th><th>Próxima revisión</th><th>Situación</th><th>Responsable</th><th>Dueño del área</th></tr>
+            </thead>
+            <tbody>
+            @foreach (var f in reporte.Filas.Elementos)
+            {
+                <tr>
+                    <td><a href="documentos/@f.DocumentoId"><code>@f.Codigo</code></a></td>
+                    <td>@f.Titulo</td>
+                    <td>@f.Area</td>
+                    <td>@f.Etiqueta</td>
+                    <td>@f.FechaProximaRevisionUtc.ToLocalTime().ToString("dd/MM/yyyy")</td>
+                    <td>
+                        <span class="badge @Presentacion.ClaseVencimiento(f.Vencimiento)">@ReglasReporte.NombreVencimiento(f.Vencimiento)</span>
+                        <div class="small text-muted">@Presentacion.TextoDias(f.Dias)</div>
+                        @if (f.SolicitudPendiente)
+                        {
+                            <div class="small"><span class="badge text-bg-secondary">«Revisado sin cambios» por decidir</span></div>
+                        }
+                    </td>
+                    <td>@f.Responsable</td>
+                    <td>@(f.Dueno ?? "—")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+
+        <Paginador Actual="@reporte.Filas.PaginaActual" Total="@reporte.Filas.TotalPaginas" Enlace="EnlacePagina" />
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "estado")] public int? Estado { get; set; }
+
+    [SupplyParameterFromQuery(Name = "area")] public int? Area { get; set; }
+
+    [SupplyParameterFromQuery(Name = "tipo")] public int? Tipo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "texto")] public string? Texto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "pagina")] public int Pagina { get; set; }
+
+    private ReporteVencimientosDto? reporte;
+    private IReadOnlyList<AreaDto> areas = [];
+    private IReadOnlyList<TipoDocumentoDto> tipos = [];
+
+    private FiltroEstadoVencimiento EstadoActual =>
+        Estado is { } e && Enum.IsDefined((FiltroEstadoVencimiento)e) ? (FiltroEstadoVencimiento)e : FiltroEstadoVencimiento.ConAviso;
+
+    protected override async Task OnInitializedAsync()
+    {
+        areas = await Catalogo.ListarAreasAsync();
+        tipos = await Catalogo.ListarTiposAsync();
+
+        await EjecutarAsync(async a =>
+            reporte = await Reportes.VencimientosAsync(a, new FiltroVencimientos(EstadoActual, Area, Tipo, Texto), Math.Max(1, Pagina)));
+    }
+
+    private string Parametros(params (string Nombre, string? Valor)[] extra)
+    {
+        var partes = new List<(string, string?)>
+        {
+            ("estado", ((int)EstadoActual).ToString()), ("area", Area?.ToString()), ("tipo", Tipo?.ToString()), ("texto", Texto),
+        };
+        partes.AddRange(extra);
+        return string.Join('&', partes.Where(p => !string.IsNullOrEmpty(p.Item2)).Select(p => $"{p.Item1}={Uri.EscapeDataString(p.Item2!)}"));
+    }
+
+    private string EnlacePagina(int numero) => $"reportes/vencimientos?{Parametros(("pagina", numero.ToString()))}";
+
+    private string EnlaceExportar(string formato) => $"reportes/vencimientos/exportar?{Parametros(("formato", formato))}";
+
+    /// <summary>El mismo filtro de área, tipo y texto, cambiando solo qué estado se muestra.</summary>
+    private string EnlaceEstado(FiltroEstadoVencimiento estado) =>
+        "reportes/vencimientos?" + string.Join('&', new (string, string?)[] { ("estado", ((int)estado).ToString()), ("area", Area?.ToString()), ("tipo", Tipo?.ToString()), ("texto", Texto) }
+            .Where(p => !string.IsNullOrEmpty(p.Item2)).Select(p => $"{p.Item1}={Uri.EscapeDataString(p.Item2!)}"));
+}

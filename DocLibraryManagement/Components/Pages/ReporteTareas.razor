@@ -1,0 +1,151 @@
+@page "/reportes/tareas"
+@attribute [Authorize(Roles = "Administrador,Auditor,Autor,Aprobador")]
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Catalogo
+@using DocLibraryManagement.Application.Reportes
+@inject IReportesService Reportes
+@inject ICatalogoService Catalogo
+
+<PageTitle>Tareas pendientes</PageTitle>
+
+<p><a href="reportes">← Reportes</a></p>
+<h1>Tareas pendientes por persona</h1>
+<p class="text-muted">
+    La etapa vigente de cada flujo en curso y las solicitudes «revisado sin cambios» que esperan al dueño del área.
+    Los días cuentan desde que la tarea le tocó a esa persona.
+</p>
+
+<Mensajes Error="@Error" />
+
+<form method="get" class="row g-2 mb-3" style="max-width: 62rem">
+    <div class="col-md-4">
+        <label class="form-label" for="usuario">Persona</label>
+        <select id="usuario" name="usuario" class="form-select">
+            <option value="">Todas</option>
+            @if (reporte is not null)
+            {
+                @foreach (var p in reporte.PorUsuario)
+                {
+                    <option value="@p.UsuarioId" selected="@(p.UsuarioId == Usuario)">@p.Usuario (@p.Total)</option>
+                }
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="tipo">Tarea</label>
+        <select id="tipo" name="tipo" class="form-select">
+            <option value="">Todas</option>
+            <option value="1" selected="@(Tipo == 1)">Revisión</option>
+            <option value="2" selected="@(Tipo == 2)">Aprobación</option>
+            <option value="3" selected="@(Tipo == 3)">Decidir «revisado sin cambios»</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="area">Área</label>
+        <select id="area" name="area" class="form-select">
+            <option value="">Todas</option>
+            @foreach (var a in areas)
+            {
+                <option value="@a.Id" selected="@(a.Id == Area)">@a.Codigo – @a.Nombre</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2 d-flex align-items-end gap-2">
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+        <a class="btn btn-link" href="reportes/tareas">Limpiar</a>
+    </div>
+</form>
+
+@if (reporte is not null)
+{
+    @if (reporte.PorUsuario.Count > 0)
+    {
+        <h2 class="h5">Resumen por persona</h2>
+        <table class="table table-sm align-middle" style="max-width: 40rem">
+            <thead><tr><th>Persona</th><th class="text-end">Tareas</th><th class="text-end">La más antigua</th></tr></thead>
+            <tbody>
+            @foreach (var p in reporte.PorUsuario)
+            {
+                <tr>
+                    <td><a href="@EnlacePersona(p.UsuarioId)">@p.Usuario</a></td>
+                    <td class="text-end">@p.Total</td>
+                    <td class="text-end">@(p.DiasMaximo == 0 ? "hoy" : $"{p.DiasMaximo} día(s)")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="text-muted">@reporte.Filas.Count tarea(s)</span>
+        <span>
+            Exportar:
+            <a href="@EnlaceExportar("xlsx")">Excel</a> ·
+            <a href="@EnlaceExportar("csv")">CSV</a>
+        </span>
+    </div>
+
+    @if (reporte.Filas.Count == 0)
+    {
+        <p class="text-muted">No hay tareas pendientes que coincidan con este filtro.</p>
+    }
+    else
+    {
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr><th>Persona</th><th>Tarea</th><th>Documento</th><th>Título</th><th>Rev.</th><th>Desde</th><th class="text-end">Días esperando</th></tr>
+            </thead>
+            <tbody>
+            @foreach (var f in reporte.Filas)
+            {
+                <tr>
+                    <td>@f.Usuario</td>
+                    <td>@ReglasReporte.NombreTipoTarea(f.Tipo)<div class="small text-muted">@f.Detalle</div></td>
+                    <td><a href="documentos/@f.DocumentoId"><code>@f.Codigo</code></a></td>
+                    <td>@f.Titulo</td>
+                    <td>@f.Etiqueta</td>
+                    <td>@f.DesdeUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                    <td class="text-end">@f.DiasEsperando</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "usuario")] public Guid? Usuario { get; set; }
+
+    [SupplyParameterFromQuery(Name = "tipo")] public int? Tipo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "area")] public int? Area { get; set; }
+
+    private ReporteTareasDto? reporte;
+    private IReadOnlyList<AreaDto> areas = [];
+
+    private TipoTareaReporte? TipoValido =>
+        Tipo is { } t && Enum.IsDefined((TipoTareaReporte)t) ? (TipoTareaReporte)t : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        areas = await Catalogo.ListarAreasAsync();
+        await EjecutarAsync(async a => reporte = await Reportes.TareasAsync(a, new FiltroTareas(Usuario, TipoValido, Area)));
+    }
+
+    private string Parametros(params (string Nombre, string? Valor)[] extra)
+    {
+        var partes = new List<(string, string?)>
+        {
+            ("usuario", Usuario?.ToString()), ("tipo", Tipo?.ToString()), ("area", Area?.ToString()),
+        };
+        partes.AddRange(extra);
+        return string.Join('&', partes.Where(p => !string.IsNullOrEmpty(p.Item2)).Select(p => $"{p.Item1}={Uri.EscapeDataString(p.Item2!)}"));
+    }
+
+    private string EnlaceExportar(string formato) => $"reportes/tareas/exportar?{Parametros(("formato", formato))}";
+
+    /// <summary>Ver solo a esa persona, conservando los filtros de tarea y área.</summary>
+    private string EnlacePersona(Guid id) =>
+        "reportes/tareas?" + string.Join('&', new (string, string?)[] { ("usuario", id.ToString()), ("tipo", Tipo?.ToString()), ("area", Area?.ToString()) }
+            .Where(p => !string.IsNullOrEmpty(p.Item2)).Select(p => $"{p.Item1}={Uri.EscapeDataString(p.Item2!)}"));
+}

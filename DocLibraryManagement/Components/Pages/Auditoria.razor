@@ -1,0 +1,179 @@
+@page "/auditoria"
+@attribute [Authorize(Roles = "Administrador,Auditor")]
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Consulta
+@using DocLibraryManagement.Application.Reportes
+@inject IAuditoriaService Servicio
+@inject TimeProvider Reloj
+
+<PageTitle>Bitácora de auditoría</PageTitle>
+
+<p><a href="reportes">← Reportes</a></p>
+<h1>Bitácora de auditoría</h1>
+<p class="text-muted">
+    Registro inmutable de lo que se ha hecho en el sistema. Solo se consulta: nadie puede modificarlo ni borrarlo desde la aplicación.
+    Las fechas están en la hora de la planta.
+</p>
+
+<Mensajes Error="@Error" />
+
+<form method="get" class="row g-2 mb-3" style="max-width: 72rem">
+    <div class="col-md-2">
+        <label class="form-label" for="desde">Desde</label>
+        <input id="desde" name="desde" type="date" class="form-control" value="@Formato(Desde)" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="hasta">Hasta</label>
+        <input id="hasta" name="hasta" type="date" class="form-control" value="@Formato(Hasta)" />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="usuario">Usuario</label>
+        <input id="usuario" name="usuario" class="form-control" maxlength="200" value="@Usuario" placeholder="p. ej. autor-cal" />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="accion">Acción (empieza con)</label>
+        <input id="accion" name="accion" class="form-control" maxlength="200" value="@Accion" list="acciones" placeholder="p. ej. Revision." />
+        <datalist id="acciones">
+            @foreach (var a in acciones)
+            {
+                <option value="@a"></option>
+            }
+        </datalist>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="entidad">Entidad</label>
+        <select id="entidad" name="entidad" class="form-select">
+            <option value="">Todas</option>
+            @foreach (var en in entidades)
+            {
+                <option value="@en" selected="@(en == Entidad)">@en</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="identificador">Identificador (p. ej. código de documento)</label>
+        <input id="identificador" name="identificador" class="form-control" maxlength="200" value="@Identificador" />
+    </div>
+    <div class="col-md-5">
+        <label class="form-label" for="texto">Texto en comentario o valores</label>
+        <input id="texto" name="texto" class="form-control" maxlength="200" value="@Texto" />
+    </div>
+    <div class="col-md-4 d-flex align-items-end gap-2">
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+        <a class="btn btn-link" href="auditoria">Limpiar</a>
+    </div>
+</form>
+
+@if (pagina is not null)
+{
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="text-muted">@pagina.Total evento(s)</span>
+        <span>
+            Exportar:
+            <a href="@EnlaceExportar("xlsx")">Excel</a> ·
+            <a href="@EnlaceExportar("csv")">CSV</a>
+        </span>
+    </div>
+
+    @if (pagina.Total > ReglasBusqueda.MaximoFilasExportacion)
+    {
+        <div class="alert alert-warning py-2">La exportación incluye solo los @ReglasBusqueda.MaximoFilasExportacion eventos más recientes. Acota las fechas o los filtros para obtener el resto.</div>
+    }
+
+    @if (pagina.Elementos.Count == 0)
+    {
+        <p class="text-muted">No hay eventos que coincidan con este filtro.</p>
+    }
+    else
+    {
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Entidad</th><th>Cambio</th><th>Comentario</th></tr>
+            </thead>
+            <tbody>
+            @foreach (var ev in pagina.Elementos)
+            {
+                <tr>
+                    <td class="text-nowrap">@ev.FechaUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                    <td class="text-break">@ev.Usuario</td>
+                    <td class="text-break"><code>@ev.Accion</code></td>
+                    <td class="text-break">@ev.Entidad<div class="small text-muted">@ev.EntidadId</div></td>
+                    <td class="text-break">
+                        @if (!string.IsNullOrEmpty(ev.ValorAnterior))
+                        {
+                            <div class="small text-muted">Antes: @ev.ValorAnterior</div>
+                        }
+                        @if (!string.IsNullOrEmpty(ev.ValorNuevo))
+                        {
+                            <div>@ev.ValorNuevo</div>
+                        }
+                    </td>
+                    <td class="text-break">
+                        @ev.Comentario
+                        @if (!string.IsNullOrEmpty(ev.DireccionIp))
+                        {
+                            <div class="small text-muted">IP @ev.DireccionIp</div>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+
+        <Paginador Actual="@pagina.PaginaActual" Total="@pagina.TotalPaginas" Enlace="EnlacePagina" />
+    }
+}
+
+@code {
+    private const int TamanoPagina = 50;
+
+    [SupplyParameterFromQuery(Name = "desde")] public DateOnly? Desde { get; set; }
+
+    [SupplyParameterFromQuery(Name = "hasta")] public DateOnly? Hasta { get; set; }
+
+    [SupplyParameterFromQuery(Name = "usuario")] public string? Usuario { get; set; }
+
+    [SupplyParameterFromQuery(Name = "accion")] public string? Accion { get; set; }
+
+    [SupplyParameterFromQuery(Name = "entidad")] public string? Entidad { get; set; }
+
+    [SupplyParameterFromQuery(Name = "identificador")] public string? Identificador { get; set; }
+
+    [SupplyParameterFromQuery(Name = "texto")] public string? Texto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "pagina")] public int Pagina { get; set; }
+
+    private Pagina<EventoAuditoriaDto>? pagina;
+    private IReadOnlyList<string> entidades = [];
+    private IReadOnlyList<string> acciones = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await EjecutarAsync(async a =>
+        {
+            entidades = await Servicio.EntidadesAsync(a);
+            acciones = await Servicio.AccionesAsync(a);
+
+            var (desdeUtc, hastaUtc) = ReglasReporte.RangoUtc(Desde, Hasta, Reloj.LocalTimeZone);
+            pagina = await Servicio.ConsultarAsync(
+                a, new FiltroAuditoria(desdeUtc, hastaUtc, Usuario, Accion, Entidad, Identificador, Texto), Math.Max(1, Pagina), TamanoPagina);
+        });
+    }
+
+    private static string Formato(DateOnly? fecha) => fecha?.ToString("yyyy-MM-dd") ?? "";
+
+    private string Parametros(params (string Nombre, string? Valor)[] extra)
+    {
+        var partes = new List<(string, string?)>
+        {
+            ("desde", Desde is null ? null : Formato(Desde)), ("hasta", Hasta is null ? null : Formato(Hasta)),
+            ("usuario", Usuario), ("accion", Accion), ("entidad", Entidad), ("identificador", Identificador), ("texto", Texto),
+        };
+        partes.AddRange(extra);
+        return string.Join('&', partes.Where(p => !string.IsNullOrEmpty(p.Item2)).Select(p => $"{p.Item1}={Uri.EscapeDataString(p.Item2!)}"));
+    }
+
+    private string EnlacePagina(int numero) => $"auditoria?{Parametros(("pagina", numero.ToString()))}";
+
+    private string EnlaceExportar(string formato) => $"auditoria/exportar?{Parametros(("formato", formato))}";
+}
