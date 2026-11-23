@@ -45,9 +45,17 @@ aprobó, cuál es la revisión **vigente**, y garantiza que nadie use una revisi
 | 4B | Vencimientos de la revisión periódica: alertas a 30 y 7 días, estado «Vencido», escalamiento, «revisado sin cambios» | **Construido; validación manual pendiente** |
 | 4B+ | Ajuste: el dueño del área ve (solo lectura) los documentos de su área | Terminada y validada |
 | 4C | Reportes (vencimientos, tareas por persona, historial por documento), pantalla de la bitácora, cambio de responsable | **Construido; validación manual pendiente** |
+| V2 | Rediseño del front según el prototipo de Calidad (rama `V2`): tema y menú lateral, Home con áreas/subáreas y nomenclatura; código estándar `SITIO-TIPO-ÁREA-UNIDAD-NNN`; unidad (subárea) obligatoria e inmutable; carga idempotente del catálogo estándar (9 áreas, 66 unidades, 20 tipos); archivos estáticos públicos | **Construido; validación manual pendiente** |
 | 5 | Endurecimiento, guía de operación, script de despliegue | **No iniciada** |
 
-**Verificación automatizada:** 922 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
+**Notas de la V2:**
+- **Código del documento:** `Documentos:CodigoSitio` (por omisión `QRT`; vacío = sin prefijo). La unidad es la subárea (código de 2–10 caracteres, único por área, inmutable). Los documentos anteriores conservan su código.
+- **Funciones del prototipo** se cargan aplanadas como subáreas («Subárea · Función»). No se adoptaron líneas productivas, alcance, referencias, matriz de aprobación por rol ni Standard Documents.
+- **Catálogo estándar:** botón en Administración; solo agrega, nunca modifica ni borra. Datos de demostración opcionales en `scripts/datos-demo-v2.sql`.
+- **Seguridad:** los archivos de `wwwroot` (CSS, JS, logo) se sirven sin sesión; los documentos siguen exigiendo sesión y permiso en `/archivos`.
+- En desarrollo la V2 usa su propia base (`DocLibraryManagement-V2-Dev`).
+
+**Verificación automatizada:** 1007 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
 **No hay pruebas de interfaz en navegador:** los clics dentro de las pantallas (subir con el selector de archivos, elegir
 personas en desplegables, botones) solo se han validado manualmente.
 
@@ -300,7 +308,7 @@ DocLibraryManagement/
 │       ├── Revision/PanelRevisionPeriodica.razor   Vencimiento de la vigente y «revisado sin cambios» (proponer/decidir/retirar)
 │       └── Pages/                     Una página por ruta (ver tabla abajo)
 │
-└── DocLibraryManagement.Tests/        (922 pruebas)
+└── DocLibraryManagement.Tests/        (1007 pruebas)
     ├── Datos/                         BaseDatosFixture, Escenario (servicios reales + reloj simulado), GeneradorPdf
     ├── Vencimientos/                  Reglas de 30/7 días, avisos y escalamiento con reloj simulado, «revisado sin cambios»
     ├── Reportes/                      Reglas puras, exportador (CSV/Excel), vencimientos, tareas, historial y bitácora (alcance por rol)

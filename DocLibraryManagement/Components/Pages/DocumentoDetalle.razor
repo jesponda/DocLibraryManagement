@@ -34,10 +34,11 @@ else
 
     <dl class="row" style="max-width: 50rem">
         <dt class="col-sm-3">Área</dt><dd class="col-sm-9">@doc.Area</dd>
-        <dt class="col-sm-3">Subárea</dt>
+        <dt class="col-sm-3">Subárea (unidad)</dt>
         <dd class="col-sm-9">
-            @if (puedeEditar && subAreas.Count > 0)
+            @if (puedeEditar && doc.SubAreaId is null && subAreas.Count > 0)
             {
+                @* Solo los documentos anteriores al estándar de código no tienen unidad: se les puede asignar una vez. *@
                 <select class="form-select form-select-sm d-inline-block w-auto" value="@subAreaElegida" @onchange="CambiarSubAreaAsync" aria-label="Subárea">
                     <option value="0">Sin subárea</option>
                     @foreach (var s in subAreas)
@@ -45,10 +46,15 @@ else
                         <option value="@s.Id">@s.Nombre</option>
                     }
                 </select>
+                <span class="text-muted small ms-2">Documento anterior al estándar de código: se asigna una sola vez.</span>
             }
             else
             {
                 @(doc.SubArea ?? "—")
+                @if (doc.SubAreaId is not null)
+                {
+                    <span class="text-muted small ms-2" title="La unidad forma parte del código del documento">forma parte del código</span>
+                }
             }
         </dd>
         <dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">@doc.Tipo</dd>

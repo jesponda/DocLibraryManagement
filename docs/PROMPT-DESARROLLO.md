@@ -419,6 +419,7 @@ Pendientes de datos reales (no bloquean la Fase 1, bloquean la puesta en producc
 | 1.8 | 2026-11-10 | Fase 4 dividida en tramos 4A/4B/4C. Tramo 4A construido: cola de correo en BD con reintentos, plantillas, modos Desactivado/Carpeta/Smtp, avisos de los eventos existentes y pantallas de usuarios y de cola. |
 | 1.9 | 2026-11-10 | Tramo 4A validado. Tramo 4B construido: avisos a 30/7 días, «Vencido» derivado, escalamiento al dueño del área, «revisado sin cambios» (propone el responsable, decide el dueño en una etapa) y aviso de vigencia próxima. |
 | 1.10 | 2026-11-11 | Tramo 4B validado. Tramo 4C construido: reportes de vencimientos y de tareas por persona, historial por documento, pantalla de la bitácora (Auditor/Administrador), exportación CSV/Excel y cambio de responsable por el Administrador. |
+| 2.0 | 2026-11-23 | Rama V2: front rediseñado según el prototipo de Calidad (tema, menú lateral, Home con áreas/subáreas/nomenclatura). Regla de código nueva `SITIO-TIPO-ÁREA-UNIDAD-NNN` (unidad = subárea, obligatoria e inmutable; consecutivo por tipo+área+unidad; códigos de tipo desde 1 letra; sitio en `Documentos:CodigoSitio`). Los documentos anteriores conservan su código. Cargador idempotente del catálogo estándar (9 áreas, 66 unidades, 20 tipos, flujos Revisión→Aprobación, 12 meses). Funciones del prototipo aplanadas como subáreas. Archivos estáticos públicos. Filtro de lista maestra por subárea y alias `q`. |
 
 ## 14. Referencias
 

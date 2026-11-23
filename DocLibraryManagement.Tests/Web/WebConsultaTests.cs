@@ -373,23 +373,34 @@ public class WebConsultaTests(AplicacionWebFixture app) : IClassFixture<Aplicaci
     [Fact]
     public async Task El_inicio_ofrece_buscar_y_la_lista_maestra_a_todos()
     {
-        var (_, html, t, _) = await PedirAsync("lector", "/");
+        var (_, html, _, _) = await PedirAsync("lector", "/");
 
-        Assert.Contains("action=\"buscar\"", html);
-        Assert.Contains("Lista maestra", t);
-        Assert.DoesNotContain("Mis tareas", t);
-        Assert.DoesNotContain("Gestión de documentos", t);
+        Assert.Contains("action=\"lista-maestra\"", html);           // el buscador filtra la lista maestra…
+        Assert.Contains("formaction=\"buscar\"", html);              // …o busca dentro del contenido de los PDF
+        Assert.Contains("href=\"lista-maestra\"", html);             // y el menú lleva a las dos
+        Assert.Contains("href=\"buscar\"", html);
+        Assert.DoesNotContain("href=\"pendientes\"", html);
+        Assert.DoesNotContain("href=\"documentos\"", html);
     }
 
     [Fact]
-    public async Task El_inicio_ofrece_a_cada_rol_su_atajo()
+    public async Task El_menu_ofrece_a_cada_rol_sus_opciones_y_solo_esas()
     {
-        var (_, _, revisor, _) = await PedirAsync("revisor", "/");
-        var (_, _, autor, _) = await PedirAsync("autor-cal", "/");
+        var (_, revisor, _, _) = await PedirAsync("revisor", "/");
+        var (_, autor, _, _) = await PedirAsync("autor-cal", "/");
+        var (_, admin, _, _) = await PedirAsync("admin", "/");
 
-        Assert.Contains("Mis tareas", revisor);
-        Assert.Contains("Gestión de documentos", autor);
-        Assert.DoesNotContain("Mis tareas", autor);
+        Assert.Contains("href=\"pendientes\"", revisor);
+        Assert.DoesNotContain("href=\"documentos\"", revisor);
+        Assert.DoesNotContain("href=\"documentos/nuevo\"", revisor);
+
+        Assert.Contains("href=\"documentos\"", autor);
+        Assert.Contains("href=\"documentos/nuevo\"", autor);
+        Assert.DoesNotContain("href=\"pendientes\"", autor);
+        Assert.DoesNotContain("href=\"administracion\"", autor);
+
+        Assert.Contains("href=\"administracion\"", admin);
+        Assert.Contains("href=\"auditoria\"", admin);
     }
 
     [Fact]

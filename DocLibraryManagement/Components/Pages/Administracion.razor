@@ -1,11 +1,63 @@
 @page "/administracion"
 @attribute [Authorize(Policy = Politicas.PuedeAdministrar)]
+@rendermode InteractiveServer
+@inherits PaginaBase
+@using DocLibraryManagement.Application.Catalogo
+@inject ICatalogoEstandarService Estandar
 
 <PageTitle>Administración</PageTitle>
 
 <h1>Administración</h1>
 
-<div class="list-group" style="max-width: 32rem">
+<Mensajes Error="@Error" Exito="@Exito" />
+
+<div class="card mb-4" style="max-width: 44rem">
+    <div class="card-body">
+        <h2 class="h5 mt-0">Catálogo estándar de Calidad</h2>
+        <p class="mb-2">
+            Carga las <strong>@CatalogoEstandar.Areas.Count áreas</strong>, sus <strong>@CatalogoEstandar.Areas.Sum(a => a.Unidades.Count) subáreas (unidades)</strong>
+            y los <strong>@CatalogoEstandar.Tipos.Count tipos documentales</strong> del estándar de Allegion Querétaro, con qué tipos aplican en cada área
+            y un flujo por omisión (Revisión → Aprobación) para los tipos que no tengan uno.
+        </p>
+        <p class="text-muted small mb-3">
+            Solo <b>agrega</b> lo que falte: no cambia nombres, activaciones, dueños, asociaciones ni flujos que ya hayas ajustado, así que se puede ejecutar
+            otra vez sin riesgo. Los cambios quedan en la bitácora.
+        </p>
+
+        @if (!confirmando)
+        {
+            <button class="btn btn-primary" @onclick="() => confirmando = true">Cargar catálogo estándar…</button>
+        }
+        else
+        {
+            <div class="alert alert-info mb-2">¿Cargar el catálogo estándar ahora?</div>
+            <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando">Sí, cargar</button>
+            <button class="btn btn-link" @onclick="() => confirmando = false" disabled="@cargando">Cancelar</button>
+        }
+
+        @if (resultado is { } r)
+        {
+            <div class="mt-3">
+                @if (r.SinCambios)
+                {
+                    <span class="badge text-bg-success">El catálogo estándar ya estaba cargado: no hubo cambios.</span>
+                }
+                else
+                {
+                    <ul class="mb-0">
+                        <li>Áreas nuevas: <strong>@r.AreasNuevas</strong></li>
+                        <li>Subáreas (unidades) nuevas: <strong>@r.SubAreasNuevas</strong></li>
+                        <li>Tipos documentales nuevos: <strong>@r.TiposNuevos</strong></li>
+                        <li>Asociaciones tipo ↔ área/unidad nuevas: <strong>@r.AsociacionesNuevas</strong></li>
+                        <li>Flujos por omisión creados: <strong>@r.PlantillasNuevas</strong></li>
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<div class="list-group" style="max-width: 44rem">
     <a class="list-group-item list-group-item-action" href="administracion/areas">
         <strong>Áreas y subáreas</strong><br />
         <small class="text-muted">Estructura de la planta y qué tipos de documento se pueden crear en cada una.</small>
@@ -27,3 +79,21 @@
         <small class="text-muted">Qué avisos se enviaron, cuáles esperan y cuáles fallaron.</small>
     </a>
 </div>
+
+@code {
+    private bool confirmando;
+    private bool cargando;
+    private ResultadoCargaCatalogo? resultado;
+
+    private async Task CargarAsync()
+    {
+        cargando = true;
+        resultado = null;
+        if (await EjecutarAsync(async a => resultado = await Estandar.CargarAsync(a)))
+        {
+            confirmando = false;
+        }
+
+        cargando = false;
+    }
+}

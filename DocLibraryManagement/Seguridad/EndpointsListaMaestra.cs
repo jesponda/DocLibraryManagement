@@ -14,7 +14,7 @@ public static class EndpointsListaMaestra
     public static void MapEndpointsListaMaestra(this WebApplication app)
     {
         app.MapGet("/lista-maestra/exportar", async (
-            string? formato, string? texto, int? area, int? tipo,
+            string? formato, string? texto, string? q, int? area, int? subarea, int? tipo,
             IConsultaService consulta, IExportadorListaMaestra exportador, TimeProvider reloj, CancellationToken ct) =>
         {
             var f = (formato ?? "xlsx").ToLowerInvariant();
@@ -26,7 +26,8 @@ public static class EndpointsListaMaestra
             IReadOnlyList<FilaListaMaestra> filas;
             try
             {
-                filas = await consulta.ListaMaestraCompletaAsync(new FiltroListaMaestra(texto, area, null, tipo), ct);
+                filas = await consulta.ListaMaestraCompletaAsync(
+                    new FiltroListaMaestra(string.IsNullOrWhiteSpace(texto) ? q : texto, area, subarea, tipo), ct);
             }
             catch (ReglaNegocioException ex)
             {

@@ -64,6 +64,9 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
 
     public int AreaId { get; private set; }
 
+    /// <summary>La unidad (subárea «GEN») de CAL, donde viven todos los documentos sembrados.</summary>
+    public int SubAreaId { get; private set; }
+
     public const string TituloProgramado = "Procedimiento programado";
 
     /// <summary>Primera emisión aprobada con vigencia a 30 días: estado Aprobado, todavía no vigente.</summary>
@@ -129,7 +132,7 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
         var catalogo = sp.GetRequiredService<ICatalogoService>();
         var areaId = await catalogo.CrearAreaAsync(admin, "CAL", "Calidad");
         AreaId = areaId;
-        await catalogo.CrearSubAreaAsync(admin, areaId, "GEN", "Unidad general"); // la unidad forma parte del código del documento
+        SubAreaId = await catalogo.CrearSubAreaAsync(admin, areaId, "GEN", "Unidad general"); // la unidad forma parte del código del documento
         var tipoId = await catalogo.CrearTipoAsync(admin, "PRO", "Procedimiento", 12);
         await catalogo.EstablecerTiposDeAreaAsync(admin, areaId, [tipoId]);
         // El aprobador es también dueño del área (aprueba las revisiones menores).

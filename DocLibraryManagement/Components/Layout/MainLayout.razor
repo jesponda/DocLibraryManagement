@@ -2,30 +2,40 @@
 @using DocLibraryManagement.Seguridad
 @inject IConfiguration Configuracion
 
-<div class="page">
-    <div class="sidebar">
+<div class="app" id="app">
+    <aside class="aside" id="lateral">
         <NavMenu />
-    </div>
+    </aside>
 
-    <main>
-        <div class="top-row px-4">
+    <div class="principal">
+        <header class="sgd-top">
+            <div class="d-flex align-items-center">
+                <button type="button" class="btn menu-btn" data-sgd="mostrar" aria-label="Mostrar el menú" title="Mostrar el menú">☰</button>
+                <h1>Sistema de gestión documental</h1>
+            </div>
+
             <AuthorizeView>
                 <Authorized>
-                    <span class="me-3">@context.User.Identity?.Name</span>
-                    @if (ConfiguracionSeguridad.ObtenerModo(Configuracion) == ConfiguracionSeguridad.ModoDesarrollo)
-                    {
-                        <form method="post" action="/dev/logout">
-                            <button type="submit" class="btn btn-link p-0">Cambiar usuario</button>
-                        </form>
-                    }
+                    <div class="sgd-user">
+                        <div class="text-end">
+                            <b>@context.User.Identity?.Name</b>
+                            @if (ConfiguracionSeguridad.ObtenerModo(Configuracion) == ConfiguracionSeguridad.ModoDesarrollo)
+                            {
+                                <form method="post" action="/dev/logout">
+                                    <button type="submit" class="btn btn-link">Cambiar usuario</button>
+                                </form>
+                            }
+                        </div>
+                        <div class="avatar" aria-hidden="true">@Iniciales(context.User.Identity?.Name)</div>
+                    </div>
                 </Authorized>
             </AuthorizeView>
-        </div>
+        </header>
 
-        <article class="content px-4">
+        <main class="content">
             @Body
-        </article>
-    </main>
+        </main>
+    </div>
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -33,3 +43,13 @@
     <a href="." class="reload">Recargar</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    /// <summary>Dos letras para el avatar: del usuario sin el dominio («DEV\autor-cal» → «AU»).</summary>
+    private static string Iniciales(string? nombre)
+    {
+        var usuario = (nombre ?? "").Split('\\', '@')[^1];
+        var letras = new string(usuario.Where(char.IsLetterOrDigit).Take(2).ToArray());
+        return letras.Length == 0 ? "?" : letras.ToUpperInvariant();
+    }
+}

@@ -56,7 +56,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
-app.MapStaticAssets();
+// Los archivos del front (CSS, scripts, logo) son públicos: sin esto, las pantallas que se ven antes de iniciar sesión
+// (el acceso de desarrollo, «acceso denegado») salían sin estilo. Los documentos NO están aquí: viven fuera de wwwroot y
+// solo se entregan por /archivos, que sí exige sesión y permiso.
+app.MapStaticAssets().AllowAnonymous();
 app.MapHealthChecks("/health").AllowAnonymous();
 
 if (ConfiguracionSeguridad.ObtenerModo(app.Configuration) == ConfiguracionSeguridad.ModoDesarrollo)

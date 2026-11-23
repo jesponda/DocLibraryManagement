@@ -1,77 +1,94 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">Gestión documental</a>
+﻿@using DocLibraryManagement.Application.Flujo
+@using DocLibraryManagement.Application.Vencimientos
+@using DocLibraryManagement.Seguridad
+@inject NavigationManager Navegacion
+@inject ProveedorActor ProveedorActor
+@inject IFlujoService Flujo
+@inject IVencimientosService Vencimientos
+
+<div class="logo">
+    <div class="logo-top">
+        <img class="logo-img" alt="Allegion" src="img/allegion.png" />
+        <button type="button" class="collapse-btn" data-sgd="ocultar" aria-label="Ocultar el menú" title="Ocultar el menú">☰</button>
     </div>
+    <b>SGD</b><span>Allegion Querétaro</span>
 </div>
 
-<input type="checkbox" title="Menú de navegación" class="navbar-toggler" />
+<AuthorizeView>
+    <Authorized>
+        <a class="@Clase("", exacto: true)" href="">Inicio</a>
+        <a class="@Clase("lista-maestra")" href="lista-maestra">Lista maestra</a>
+        <a class="@Clase("buscar")" href="buscar">Buscar</a>
+    </Authorized>
+</AuthorizeView>
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Inicio
-            </NavLink>
-        </div>
+<AuthorizeView Policy="@Politicas.PuedeEditarDocumentos">
+    <a class="@Clase("documentos/nuevo")" href="documentos/nuevo">Nuevo documento</a>
+</AuthorizeView>
 
-        <AuthorizeView>
-            <Authorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="lista-maestra">
-                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Lista maestra
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="buscar">
-                        <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Buscar
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="mi-acceso">
-                        <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span> Mi acceso
-                    </NavLink>
-                </div>
-            </Authorized>
+<AuthorizeView Roles="Autor,Administrador,Auditor">
+    <a class="@Clase("documentos", excluir: "documentos/nuevo")" href="documentos">Documentos</a>
+</AuthorizeView>
+
+<AuthorizeView Roles="Revisor,Aprobador">
+    <a class="@Clase("pendientes")" href="pendientes">Mis tareas @if (pendientes > 0) { <span class="badge text-bg-warning">@pendientes</span> }</a>
+</AuthorizeView>
+
+<AuthorizeView Roles="Administrador,Auditor,Autor,Aprobador">
+    <a class="@Clase("reportes")" href="reportes">Reportes</a>
+</AuthorizeView>
+
+<AuthorizeView Roles="Administrador,Auditor">
+    <a class="@Clase("auditoria")" href="auditoria">Bitácora</a>
+</AuthorizeView>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="nav-sep"></div>
+        <AuthorizeView Policy="@Politicas.PuedeAdministrar" Context="admin">
+            <a class="@Clase("administracion")" href="administracion">Administración</a>
         </AuthorizeView>
+        <a class="@Clase("mi-acceso")" href="mi-acceso">Mi acceso</a>
+    </Authorized>
+</AuthorizeView>
 
-        <AuthorizeView Roles="Autor,Administrador,Auditor">
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="documentos" Match="NavLinkMatch.Prefix">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Documentos
-                </NavLink>
-            </div>
-        </AuthorizeView>
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? EstadoAutenticacion { get; set; }
 
-        <AuthorizeView Roles="Revisor,Aprobador">
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="pendientes">
-                    <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Mis tareas
-                </NavLink>
-            </div>
-        </AuthorizeView>
+    private int pendientes;
 
-        <AuthorizeView Roles="Administrador,Auditor,Autor,Aprobador">
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="reportes" Match="NavLinkMatch.Prefix">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Reportes
-                </NavLink>
-            </div>
-        </AuthorizeView>
+    /// <summary>Lo que espera a quien revisa o aprueba: etapas de flujo y solicitudes «revisado sin cambios» por decidir.</summary>
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var estado = EstadoAutenticacion is null ? null : await EstadoAutenticacion;
+            if (estado?.User.Identity?.IsAuthenticated == true && (estado.User.IsInRole("Revisor") || estado.User.IsInRole("Aprobador")))
+            {
+                var actor = await ProveedorActor.ObtenerAsync();
+                pendientes = (await Flujo.MisTareasAsync(actor)).Count + (await Vencimientos.PendientesDeDecisionAsync(actor)).Count;
+            }
+        }
+        catch (Exception)
+        {
+            pendientes = 0; // el menú nunca debe fallar por el contador
+        }
+    }
 
-        <AuthorizeView Roles="Administrador,Auditor">
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="auditoria" Match="NavLinkMatch.Prefix">
-                    <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Bitácora
-                </NavLink>
-            </div>
-        </AuthorizeView>
+    /// <summary>Marca como activa la opción de la ruta actual. «excluir» evita que «Documentos» se marque junto a «Nuevo documento».</summary>
+    private string Clase(string prefijo, bool exacto = false, string? excluir = null)
+    {
+        var ruta = Navegacion.ToBaseRelativePath(Navegacion.Uri).Split('?', '#')[0].Trim('/');
 
-        <AuthorizeView Policy="@Politicas.PuedeAdministrar">
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="administracion">
-                    <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Administración
-                </NavLink>
-            </div>
-        </AuthorizeView>
-    </nav>
-</div>
+        var activa = exacto
+            ? ruta.Length == 0
+            : (ruta == prefijo || ruta.StartsWith(prefijo + "/", StringComparison.OrdinalIgnoreCase));
+
+        if (activa && excluir is not null && (ruta == excluir || ruta.StartsWith(excluir + "/", StringComparison.OrdinalIgnoreCase)))
+        {
+            activa = false;
+        }
+
+        return activa ? "sgd-nav active" : "sgd-nav";
+    }
+}

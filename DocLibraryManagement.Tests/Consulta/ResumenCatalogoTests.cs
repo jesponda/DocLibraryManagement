@@ -147,17 +147,18 @@ public class ResumenCatalogoTests(BaseDatosFixture bd) : IClassFixture<BaseDatos
     }
 
     [Fact]
-    public async Task Las_subareas_y_los_tipos_salen_ordenados()
+    public async Task Las_subareas_y_los_tipos_salen_en_el_orden_en_que_se_dieron_de_alta_no_alfabetico()
     {
         using var e = new Escenario(bd);
         var f = await e.PrepararFlujoAsync();
-        await e.Catalogo.CrearSubAreaAsync(f.Admin, f.AreaId, "ZZ", "Zeta");
-        await e.Catalogo.CrearSubAreaAsync(f.Admin, f.AreaId, "AA", "Alfa");
+        var zeta = await e.Catalogo.CrearSubAreaAsync(f.Admin, f.AreaId, "ZZ", "Zeta");
+        var alfa = await e.Catalogo.CrearSubAreaAsync(f.Admin, f.AreaId, "AA", "Alfa");
 
         var resumen = await e.Consulta().ResumenCatalogoAsync();
 
-        var nombres = resumen.Areas.Single(a => a.Id == f.AreaId).SubAreas.Select(s => s.Nombre).ToList();
-        Assert.Equal(nombres.Order(StringComparer.CurrentCultureIgnoreCase), nombres);
-        Assert.Equal(resumen.Tipos.Select(t => t.Codigo).Order(StringComparer.Ordinal), resumen.Tipos.Select(t => t.Codigo));
+        var subs = resumen.Areas.Single(a => a.Id == f.AreaId).SubAreas;
+        Assert.Equal(["GEN", "ZZ", "AA"], subs.Select(s => s.Codigo));          // el del estándar de Calidad va por proceso, no por nombre
+        Assert.Equal([subs[0].Id, zeta, alfa], subs.Select(s => s.Id));
+        Assert.Equal(resumen.Tipos.Select(t => t.Id).Order(), resumen.Tipos.Select(t => t.Id));
     }
 }

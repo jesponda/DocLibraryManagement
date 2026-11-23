@@ -1,38 +1,154 @@
 ﻿@page "/"
+@using DocLibraryManagement.Application.Catalogo
+@using DocLibraryManagement.Application.Consulta
+@using DocLibraryManagement.Application.Documentos
+@using Microsoft.Extensions.Options
+@inject IConsultaService Consulta
+@inject IOptions<DocumentosOptions> OpcionesDocumentos
 
 <PageTitle>Inicio</PageTitle>
 
-<h1>Gestión documental</h1>
-
-<AuthorizeView>
-    <Authorized>
-        <p>Bienvenido, <strong>@context.User.Identity?.Name</strong>.</p>
-
-        <form method="get" action="buscar" class="mb-4" style="max-width: 40rem">
-            <label class="form-label" for="busqueda">¿Qué documento necesitas?</label>
-            <div class="input-group">
-                <input id="busqueda" name="q" class="form-control" maxlength="200" placeholder="Código, título o una palabra del contenido" />
-                <button type="submit" class="btn btn-primary">Buscar</button>
-            </div>
+@if (resumen is not null)
+{
+    <div class="hero">
+        <h2>¿Qué documentación buscas?</h2>
+        <form class="searchgrid" method="get" action="lista-maestra">
+            <input type="search" name="q" class="form-control" maxlength="200" placeholder="Código o nombre" aria-label="Código o nombre" />
+            <select name="tipo" class="form-select" aria-label="Tipo documental">
+                <option value="">Tipo documental</option>
+                @foreach (var t in resumen.Tipos)
+                {
+                    <option value="@t.Id">@t.Codigo · @t.Nombre</option>
+                }
+            </select>
+            <select id="inicio-area" name="area" class="form-select" aria-label="Área">
+                <option value="">Área</option>
+                @foreach (var a in resumen.Areas)
+                {
+                    <option value="@a.Id">@a.Nombre</option>
+                }
+            </select>
+            <select id="inicio-subarea" name="subarea" class="form-select" data-depende="inicio-area" aria-label="Subárea">
+                <option value="">Subárea</option>
+                @foreach (var a in resumen.Areas)
+                {
+                    @foreach (var s in a.SubAreas)
+                    {
+                        <option value="@s.Id" data-padre="@a.Id">@s.Nombre@(s.Codigo is null ? "" : $" ({s.Codigo})")</option>
+                    }
+                }
+            </select>
+            <button type="submit" class="btn btn-primary s2">Buscar</button>
+            <button type="submit" class="btn btn-outline-primary s2" formaction="buscar" title="Busca también dentro del texto del PDF vigente">Buscar en el contenido</button>
         </form>
+        <div class="nota mt-2">La subárea se habilita al elegir el área. «Buscar en el contenido» revisa también el texto de los PDF vigentes.</div>
+    </div>
 
-        <div class="list-group" style="max-width: 40rem">
-            <a class="list-group-item list-group-item-action" href="lista-maestra">
-                <strong>Lista maestra</strong><br />
-                <small class="text-muted">Todos los documentos vigentes, con su revisión y fecha de aprobación.</small>
-            </a>
-            <AuthorizeView Roles="Revisor,Aprobador" Context="tareas">
-                <a class="list-group-item list-group-item-action" href="pendientes">
-                    <strong>Mis tareas</strong><br />
-                    <small class="text-muted">Documentos que esperan tu revisión o aprobación.</small>
-                </a>
-            </AuthorizeView>
-            <AuthorizeView Roles="Autor,Administrador,Auditor" Context="gestion">
-                <a class="list-group-item list-group-item-action" href="documentos">
-                    <strong>Gestión de documentos</strong><br />
-                    <small class="text-muted">Borradores, revisiones en curso y flujos de aprobación.</small>
-                </a>
+    @if (resumen.Areas.Count == 0)
+    {
+        <div class="alert alert-info mt-4">
+            Todavía no hay áreas en el catálogo.
+            <AuthorizeView Policy="@Politicas.PuedeAdministrar">
+                <Authorized>Carga el catálogo estándar de Calidad desde <a class="alert-link" href="administracion">Administración</a>.</Authorized>
+                <NotAuthorized>Pide a un Administrador que lo configure.</NotAuthorized>
             </AuthorizeView>
         </div>
-    </Authorized>
-</AuthorizeView>
+    }
+    else
+    {
+        <div class="homegrid @(transversal is null ? "sin-transversal" : "")">
+            <div class="col">
+                <h2>Áreas</h2>
+                <div class="cards">
+                    @foreach (var a in principales)
+                    {
+                        @TarjetaArea(a)
+                    }
+                </div>
+            </div>
+
+            @if (transversal is not null)
+            {
+                <div class="col">
+                    <h2>@transversal.Nombre</h2>
+                    @TarjetaArea(transversal, "sgdcard")
+                </div>
+            }
+        </div>
+    }
+
+    @if (resumen.Tipos.Count > 0)
+    {
+        <h2>Nomenclatura · Tipo documental</h2>
+        <div class="legend" role="list" aria-label="Códigos de tipo documental">
+            @foreach (var t in resumen.Tipos)
+            {
+                <a class="legend-item" role="listitem" href="lista-maestra?tipo=@t.Id" title="@t.Documentos documento(s) vigente(s)">
+                    <span class="badge blue">@t.Codigo</span><span>@t.Nombre</span>
+                </a>
+            }
+        </div>
+    }
+
+    <h2>Código del documento</h2>
+    <div class="card">
+        <div class="card-body">
+            <div class="codebox">
+                @if (sitio.Length > 0)
+                {
+                    <span title="Sitio">@sitio</span><text>-</text>
+                }
+                <span title="Tipo documental">TIPO</span>-<span title="Área">ÁREA</span>-<span title="Unidad: la subárea del documento">UNIDAD</span>-<span title="Consecutivo">NNN</span>
+            </div>
+            <div class="nota mt-2">
+                @(sitio.Length > 0 ? "Sitio · " : "")Tipo documental · Área · Unidad · Consecutivo. La unidad es la <b>subárea</b> del documento. El consecutivo es por tipo, área y unidad
+                y no se reutiliza. La revisión (Rev.00, Rev.01…) no forma parte del código.
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ResumenCatalogoDto? resumen;
+    private IReadOnlyList<ResumenAreaDto> principales = [];
+    private ResumenAreaDto? transversal;
+    private string sitio = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        sitio = (OpcionesDocumentos.Value.CodigoSitio ?? "").Trim().ToUpperInvariant();
+        resumen = await Consulta.ResumenCatalogoAsync();
+
+        // «General / SGD» va aparte, a la derecha. Las áreas del estándar siguen su orden; las demás van después, por nombre.
+        transversal = resumen.Areas.FirstOrDefault(a => a.Codigo == CatalogoEstandar.AreaTransversal);
+        var orden = CatalogoEstandar.OrdenHome.ToList();
+        principales =
+        [
+            .. resumen.Areas
+                .Where(a => a != transversal)
+                .OrderBy(a => orden.IndexOf(a.Codigo) is var i and >= 0 ? i : int.MaxValue)
+                .ThenBy(a => a.Nombre, StringComparer.CurrentCultureIgnoreCase),
+        ];
+    }
+
+    private RenderFragment TarjetaArea(ResumenAreaDto a, string clases = "") => @<div class="card area @(a.Documentos == 0 ? "dim" : "") @clases">
+        <h3>
+            <span class="grow"><a href="lista-maestra?area=@a.Id" title="Ver los documentos de @a.Nombre">@a.Nombre</a></span>
+            <span class="badge brand">@a.Codigo</span>
+            <span class="badge @(a.Documentos > 0 ? "blue" : "")">@a.Documentos Doc</span>
+        </h3>
+        <div class="sublist" tabindex="0" aria-label="Subáreas de @a.Nombre">
+            @if (a.SubAreas.Count == 0)
+            {
+                <div class="sin-unidades">Sin subáreas definidas.</div>
+            }
+            @foreach (var s in a.SubAreas)
+            {
+                <a href="lista-maestra?area=@a.Id&subarea=@s.Id">
+                    <span>@s.Nombre</span>
+                    <span><span class="badge">@s.Documentos</span>@if (s.Codigo is not null) { <code>@s.Codigo</code> }</span>
+                </a>
+            }
+        </div>
+    </div>;
+}

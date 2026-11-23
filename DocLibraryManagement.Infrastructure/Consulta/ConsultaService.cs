@@ -42,12 +42,14 @@ internal sealed partial class ConsultaService(IDbContextFactory<AppDbContext> fa
             .AsSplitQuery()
             .ToListAsync(ct);
 
-        var tipos = await db.TiposDocumento.AsNoTracking().Where(t => t.Activo).OrderBy(t => t.Codigo).ToListAsync(ct);
+        // Subáreas y tipos salen en el orden en que se dieron de alta: el catálogo estándar los carga en el orden del estándar
+        // de Calidad (p. ej. las líneas de Production van en el orden del proceso, no alfabético).
+        var tipos = await db.TiposDocumento.AsNoTracking().Where(t => t.Activo).OrderBy(t => t.Id).ToListAsync(ct);
 
         return new ResumenCatalogoDto(
             [.. areas.Select(a => new ResumenAreaDto(
                 a.Id, a.Codigo, a.Nombre, porArea.GetValueOrDefault(a.Id),
-                [.. a.SubAreas.OrderBy(s => s.Nombre).Select(s => new ResumenSubAreaDto(s.Id, s.Codigo, s.Nombre, porSub.GetValueOrDefault(s.Id)))]))],
+                [.. a.SubAreas.OrderBy(s => s.Id).Select(s => new ResumenSubAreaDto(s.Id, s.Codigo, s.Nombre, porSub.GetValueOrDefault(s.Id)))]))],
             [.. tipos.Select(t => new ResumenTipoDto(t.Id, t.Codigo, t.Nombre, porTipo.GetValueOrDefault(t.Id)))]);
     }
 

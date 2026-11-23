@@ -4,9 +4,11 @@
 @inherits PaginaBase
 @using DocLibraryManagement.Application.Catalogo
 @using DocLibraryManagement.Application.Documentos
+@using Microsoft.Extensions.Options
 @inject ICatalogoService Catalogo
 @inject IDocumentoService Servicio
 @inject NavigationManager Navegacion
+@inject IOptions<DocumentosOptions> Opciones
 
 <PageTitle>Nuevo documento</PageTitle>
 
@@ -42,15 +44,25 @@ else
 
             @if (areaActual is not null)
             {
-                @if (areaActual.SubAreas.Any(s => s.Activa))
+                @if (unidades.Count == 0)
+                {
+                    <div class="alert alert-warning">
+                        El área <strong>@areaActual.Codigo</strong> no tiene subáreas (unidades) activas con abreviatura. La unidad forma parte del código del
+                        documento, así que un Administrador debe crearla antes de que se puedan crear documentos aquí.
+                    </div>
+                }
+                else
                 {
                     <div class="mb-3">
-                        <label class="form-label" for="sub">Subárea <span class="text-muted">(opcional)</span></label>
+                        <label class="form-label" for="sub">Subárea (unidad) <span class="text-muted">· forma parte del código y no se puede cambiar</span></label>
                         <select id="sub" class="form-select" value="@subAreaId" @onchange="SubAreaCambiadaAsync">
-                            <option value="0">Sin subárea</option>
-                            @foreach (var s in areaActual.SubAreas.Where(s => s.Activa))
+                            @if (unidades.Count > 1)
                             {
-                                <option value="@s.Id">@s.Nombre</option>
+                                <option value="0">Selecciona…</option>
+                            }
+                            @foreach (var s in unidades)
+                            {
+                                <option value="@s.Id">@s.Nombre (@s.Codigo)</option>
                             }
                         </select>
                     </div>
@@ -77,10 +89,15 @@ else
                 <div class="mb-3">
                     <label class="form-label" for="titulo">Título</label>
                     <input id="titulo" class="form-control" maxlength="300" @bind="titulo" />
-                    <div class="form-text">El código (por ejemplo PRO-CAL-012) se asigna automáticamente.</div>
                 </div>
 
-                <button class="btn btn-primary" @onclick="CrearAsync" disabled="@(guardando || tipos.Count == 0)">Crear documento</button>
+                <div class="mb-3">
+                    <div class="form-label">Código que se asignará</div>
+                    <div class="codebox">@VistaPreviaCodigo</div>
+                    <div class="form-text">El consecutivo (NNN) se asigna automáticamente al crear: es por tipo, área y unidad, y no se reutiliza.</div>
+                </div>
+
+                <button class="btn btn-primary" @onclick="CrearAsync" disabled="@(guardando || tipos.Count == 0 || subAreaId == 0)">Crear documento</button>
             }
         </div>
     </div>
@@ -108,11 +125,29 @@ else
         areas ??= [];
     }
 
+    /// <summary>Las unidades que admiten documentos: activas y con abreviatura.</summary>
+    private IReadOnlyList<SubAreaDto> unidades = [];
+
+    private string VistaPreviaCodigo
+    {
+        get
+        {
+            var sitio = (Opciones.Value.CodigoSitio ?? "").Trim().ToUpperInvariant();
+            var tipo = tipos.FirstOrDefault(t => t.Id == tipoId)?.Codigo ?? "TIPO";
+            var unidad = unidades.FirstOrDefault(s => s.Id == subAreaId)?.Codigo ?? "UNIDAD";
+            var cuerpo = $"{tipo}-{areaActual?.Codigo ?? "ÁREA"}-{unidad}-NNN";
+            return sitio.Length > 0 ? $"{sitio}-{cuerpo}" : cuerpo;
+        }
+    }
+
     private async Task AreaCambiadaAsync(ChangeEventArgs e)
     {
         areaId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
         areaActual = areas!.FirstOrDefault(a => a.Id == areaId);
-        subAreaId = 0;
+        unidades = [.. (areaActual?.SubAreas ?? []).Where(s => s.Activa && s.Codigo is not null)];
+
+        // Con una sola unidad no hay nada que elegir: queda seleccionada.
+        subAreaId = unidades.Count == 1 ? unidades[0].Id : 0;
         tipoId = 0;
         await CargarTiposAsync();
     }
@@ -131,16 +166,16 @@ else
 
     private async Task CrearAsync()
     {
-        if (areaId == 0 || tipoId == 0)
+        if (areaId == 0 || subAreaId == 0 || tipoId == 0)
         {
-            Error = "Elige el área y el tipo de documento.";
+            Error = "Elige el área, la subárea (unidad) y el tipo de documento.";
             return;
         }
 
         guardando = true;
         DocumentoDetalleDto? creado = null;
         var ok = await EjecutarAsync(async a =>
-            creado = await Servicio.CrearAsync(a, new NuevoDocumento(titulo, areaId, subAreaId == 0 ? null : subAreaId, tipoId)));
+            creado = await Servicio.CrearAsync(a, new NuevoDocumento(titulo, areaId, subAreaId, tipoId)));
         guardando = false;
 
         if (ok && creado is not null)
