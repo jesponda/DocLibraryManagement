@@ -670,8 +670,13 @@ SELECT name FROM sys.databases WHERE name LIKE 'DocLibrary[_]%';   -- borrar las
 
 ## 9. Puesta en producción
 
-> No existe aún un script de despliegue ni una guía de operación (Fase 5). Esta sección es el **punto de partida**; los
-> comandos de abajo se verificaron (el script de migraciones se genera y `publish` en Release termina bien).
+> **Despliegue rápido en un servidor Windows (rama V2):** `scripts\desplegar.ps1` publica la aplicación, crea la base y aplica las
+> migraciones, abre el puerto (8001 por omisión), registra una tarea programada que la arranca con el servidor y muestra la
+> contraseña temporal del administrador. No toca otras aplicaciones. Ejemplo y parámetros en el encabezado del script.
+> La guía de operación completa (Fase 5) sigue pendiente; lo de abajo es el punto de partida detallado.
+>
+> **HTTP:** sin certificado, las contraseñas viajan sin cifrar por la red local. Para el piloto interno es un riesgo aceptado
+> solo si el negocio lo acepta; lo recomendable es publicar con HTTPS.
 
 ### 9.1 Antes de desplegar: decisiones y datos que faltan
 

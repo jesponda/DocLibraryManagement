@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace DocLibraryManagement.Seguridad;
 
@@ -66,7 +67,15 @@ public static class ConfiguracionSeguridad
                         o.SlidingExpiration = true;
                         o.Events.OnValidatePrincipal = SesionLocal.ValidarAsync;
                     });
-                services.AddDataProtection();
+                // Las claves cifran la cookie de sesión y los mensajes firmados. Con una carpeta fija sobreviven a reinicios y
+                // a cambios de cuenta de servicio; sin ella se usa el valor por omisión de ASP.NET (perfil del usuario).
+                var dp = services.AddDataProtection().SetApplicationName("DocLibraryManagement");
+                if (configuracion["DataProtection:RutaClaves"] is { Length: > 0 } rutaClaves)
+                {
+                    dp.PersistKeysToFileSystem(new DirectoryInfo(rutaClaves));
+                }
+
+
                 break;
 
             default:
