@@ -70,7 +70,10 @@ if ($LASTEXITCODE -ne 0) { throw 'La publicacion fallo.' }
 
 # ---------------------------------------------------------------- 2. base de datos
 Paso '2/6 Creando la base de datos (si no existe) y aplicando migraciones'
-if (-not (Get-Command dotnet-ef -ErrorAction SilentlyContinue) -and -not ((dotnet tool list -g) -match 'dotnet-ef')) {
+# Las herramientas globales viven en %USERPROFILE%\.dotnet\tools, que una ventana ya abierta puede no tener en el PATH.
+$herramientas = Join-Path $env:USERPROFILE '.dotnet\tools'
+if (($env:PATH -split ';') -notcontains $herramientas) { $env:PATH = "$env:PATH;$herramientas" }
+if (-not ((dotnet tool list -g) -match 'dotnet-ef')) {
     dotnet tool install --global dotnet-ef --version 10.0.14
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo instalar dotnet-ef.' }
 }
