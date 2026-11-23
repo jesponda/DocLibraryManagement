@@ -41,6 +41,13 @@ function Paso($texto) { Write-Host "`n== $texto" -ForegroundColor Cyan }
 $esAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $esAdmin -and -not $SinTarea) { throw 'Abre PowerShell como Administrador (hace falta para la tarea programada y el firewall).' }
 
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+    throw 'No se encontro "dotnet". Instala el SDK de .NET 10 (winget install Microsoft.DotNet.SDK.10), cierra y abre PowerShell como Administrador y vuelve a ejecutar.'
+}
+if (-not ((dotnet --list-sdks) -match '^10\.')) {
+    throw 'Hace falta el SDK completo de .NET 10 (no solo el runtime). Instalalo con: winget install Microsoft.DotNet.SDK.10'
+}
+
 # El puerto no debe estar ocupado por OTRA cosa (si es esta misma app, se detiene mas abajo).
 $ocupado = Get-NetTCPConnection -LocalPort $Puerto -State Listen -ErrorAction SilentlyContinue
 if ($ocupado -and -not (Get-ScheduledTask -TaskName $NombreTarea -ErrorAction SilentlyContinue) -and -not $SinTarea) {
