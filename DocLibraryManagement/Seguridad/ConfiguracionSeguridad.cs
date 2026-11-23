@@ -12,8 +12,11 @@ public static class ConfiguracionSeguridad
     public const string ModoWindows = "Windows";
     public const string ModoDesarrollo = "Desarrollo";
 
+    /// <summary>Lista de usuarios propia de la aplicación, con usuario y contraseña (sin Active Directory).</summary>
+    public const string ModoLocal = "Local";
+
     public static string ObtenerModo(IConfiguration configuracion) =>
-        configuracion["Autenticacion:Modo"] ?? ModoWindows;
+        configuracion["Autenticacion:Modo"] ?? ModoLocal;
 
     public static IServiceCollection AddSeguridadDocumental(
         this IServiceCollection services,
@@ -48,12 +51,35 @@ public static class ConfiguracionSeguridad
                     });
                 break;
 
+            case ModoLocal:
+                services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+                    .AddCookie(o =>
+                    {
+                        o.LoginPath = "/acceso";
+                        o.AccessDeniedPath = "/acceso-denegado";
+                        o.Cookie.Name = "SGD.Sesion";
+                        o.Cookie.HttpOnly = true;
+                        o.Cookie.SameSite = SameSiteMode.Lax;
+                        // Detrás de HTTPS la cookie viaja solo cifrada; si el sitio se sirviera por HTTP interno, sigue funcionando.
+                        o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                        o.ExpireTimeSpan = TimeSpan.FromHours(8);
+                        o.SlidingExpiration = true;
+                        o.Events.OnValidatePrincipal = SesionLocal.ValidarAsync;
+                    });
+                services.AddDataProtection();
+                break;
+
             default:
                 throw new InvalidOperationException(
-                    $"Modo de autenticación '{modo}' no válido. Use '{ModoWindows}' o '{ModoDesarrollo}'.");
+                    $"Modo de autenticación '{modo}' no válido. Use '{ModoLocal}', '{ModoWindows}' o '{ModoDesarrollo}'.");
         }
 
-        services.AddScoped<IClaimsTransformation, TransformacionClaimsDocumental>();
+        // En modo Local los roles y áreas salen de la lista de usuarios de la aplicación (no hay grupos de AD que resolver).
+        if (modo != ModoLocal)
+        {
+            services.AddScoped<IClaimsTransformation, TransformacionClaimsDocumental>();
+        }
+
         services.AddSingleton<IAuthorizationHandler, EdicionEnAreaHandler>();
 
         services.AddAuthorizationBuilder()

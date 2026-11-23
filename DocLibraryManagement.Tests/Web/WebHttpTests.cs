@@ -153,7 +153,7 @@ public class WebHttpTests(AplicacionWebFixture app) : IClassFixture<AplicacionWe
 
         Assert.Contains("href=\"administracion/usuarios\"", html);
         Assert.Contains("href=\"administracion/correo\"", html);
-        Assert.Contains("Usuarios y correos", Texto(html));
+        Assert.Contains("Usuarios y roles", Texto(html));
         Assert.Contains("Cola de correo", Texto(html));
     }
 

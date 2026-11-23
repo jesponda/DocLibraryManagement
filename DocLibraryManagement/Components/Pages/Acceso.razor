@@ -1,0 +1,49 @@
+@page "/acceso"
+@layout LayoutAcceso
+@attribute [AllowAnonymous]
+@inject IConfiguration Configuracion
+@using DocLibraryManagement.Seguridad
+
+<PageTitle>Iniciar sesión</PageTitle>
+
+@if (ConfiguracionSeguridad.ObtenerModo(Configuracion) != ConfiguracionSeguridad.ModoLocal)
+{
+    <div class="alert alert-info">Esta pantalla no está disponible: la aplicación usa otro modo de acceso.</div>
+}
+else
+{
+    @if (E == "rechazo")
+    {
+        <div class="alert alert-danger" role="alert">Usuario o contraseña incorrectos.</div>
+    }
+    else if (E == "bloqueo")
+    {
+        <div class="alert alert-danger" role="alert">
+            Demasiados intentos fallidos: la cuenta quedó bloqueada unos minutos. Espera e inténtalo de nuevo, o pide a un
+            Administrador que restablezca tu contraseña.
+        </div>
+    }
+
+    <form method="post" action="acceso/entrar">
+        <AntiforgeryToken />
+        <input type="hidden" name="retorno" value="@Retorno" />
+        <div class="mb-3">
+            <label class="form-label" for="usuario">Usuario</label>
+            <input class="form-control" id="usuario" name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="50" required autofocus />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="contrasena">Contraseña</label>
+            <input class="form-control" id="contrasena" name="contrasena" type="password" autocomplete="current-password" maxlength="128" required />
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Entrar</button>
+    </form>
+    <p class="text-muted small mt-3 mb-0">
+        ¿No tienes cuenta o olvidaste tu contraseña? Pídela al Administrador del sistema.
+    </p>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "e")] private string? E { get; set; }
+
+    [SupplyParameterFromQuery(Name = "retorno")] private string? Retorno { get; set; }
+}

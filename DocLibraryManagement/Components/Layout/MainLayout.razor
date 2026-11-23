@@ -25,6 +25,16 @@
                                     <button type="submit" class="btn btn-link">Cambiar usuario</button>
                                 </form>
                             }
+                            else if (ConfiguracionSeguridad.ObtenerModo(Configuracion) == ConfiguracionSeguridad.ModoLocal)
+                            {
+                                <div class="d-flex gap-2 justify-content-end align-items-center">
+                                    <a class="btn btn-link" href="cuenta/contrasena">Contraseña</a>
+                                    <form method="post" action="acceso/salir">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="btn btn-link">Cerrar sesión</button>
+                                    </form>
+                                </div>
+                            }
                         </div>
                         <div class="avatar" aria-hidden="true">@Iniciales(context.User.Identity?.Name)</div>
                     </div>

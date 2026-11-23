@@ -82,6 +82,7 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
         builder.UseSetting("ConnectionStrings:DefaultConnection",
             $"Server=(localdb)\\mssqllocaldb;Database={_baseDatos};Trusted_Connection=True");
         builder.UseSetting("Archivos:RutaBase", _carpetaArchivos);
+        builder.UseSetting("Autenticacion:Modo", "Desarrollo"); // estas pruebas usan las personas simuladas; el modo Local tiene su propia fixture
         builder.UseSetting("TareasDeFondo:MinutosEntreEjecuciones", "0"); // sin proceso de fondo: las pruebas controlan cuándo corre
         // appsettings.Development.json activa el modo Carpeta; aquí se apaga para que las pruebas web no escriban .eml
         // en la carpeta de la aplicación ni arranque el envío en segundo plano.

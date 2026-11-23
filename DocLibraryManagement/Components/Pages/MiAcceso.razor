@@ -1,4 +1,6 @@
 @page "/mi-acceso"
+@using DocLibraryManagement.Seguridad
+@inject IConfiguration Configuracion
 
 <PageTitle>Mi acceso</PageTitle>
 
@@ -33,8 +35,26 @@
                 }
             </dd>
         </dl>
-        <p class="text-muted">
-            Los roles se calculan a partir de tus grupos de Active Directory y pueden tardar unos minutos en actualizarse.
-        </p>
+        @if (ConfiguracionSeguridad.ObtenerModo(Configuracion) == ConfiguracionSeguridad.ModoLocal)
+        {
+            @if (Cambiada == "1")
+            {
+                <div class="alert alert-success" role="status">Tu contraseña se cambió.</div>
+            }
+            <p class="text-muted">
+                Tus roles y áreas los asigna un Administrador del sistema; si necesitas otros, pídeselos.
+                <a href="cuenta/contrasena">Cambiar mi contraseña</a>.
+            </p>
+        }
+        else
+        {
+            <p class="text-muted">
+                Los roles se calculan a partir de tus grupos de Active Directory y pueden tardar unos minutos en actualizarse.
+            </p>
+        }
     </Authorized>
 </AuthorizeView>
+
+@code {
+    [SupplyParameterFromQuery(Name = "cambiada")] private string? Cambiada { get; set; }
+}

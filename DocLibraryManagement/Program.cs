@@ -1,5 +1,6 @@
 using DocLibraryManagement.Application.Archivos;
 using DocLibraryManagement.Application.Correo;
+using DocLibraryManagement.Application.Usuarios;
 using DocLibraryManagement.Components;
 using DocLibraryManagement.Infrastructure;
 using DocLibraryManagement.Infrastructure.Persistencia;
@@ -52,8 +53,31 @@ else
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
+var modoAutenticacion = ConfiguracionSeguridad.ObtenerModo(app.Configuration);
+
+if (modoAutenticacion == ConfiguracionSeguridad.ModoLocal)
+{
+    // Primer arranque sin cuentas: se crea el Administrador inicial para poder entrar y dar de alta a los demás.
+    var inicial = app.Configuration.GetSection("Autenticacion:AdministradorInicial");
+    using var alcance = app.Services.CreateScope();
+    var temporal = await alcance.ServiceProvider.GetRequiredService<IAutenticacionLocal>().AsegurarAdministradorInicialAsync(
+        inicial["Usuario"] ?? "admin", inicial["Nombre"] ?? "Administrador", inicial["ContrasenaTemporal"]);
+    if (temporal is not null)
+    {
+        var log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Cuentas");
+        log.LogWarning(
+            "Se creó el Administrador inicial «{Usuario}». Contraseña temporal (se muestra solo ahora y se debe cambiar al entrar): {Contrasena}",
+            inicial["Usuario"] ?? "admin", temporal);
+    }
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
+if (modoAutenticacion == ConfiguracionSeguridad.ModoLocal)
+{
+    app.UseCambioDeContrasenaObligatorio();
+}
+
 app.UseAntiforgery();
 
 // Los archivos del front (CSS, scripts, logo) son públicos: sin esto, las pantallas que se ven antes de iniciar sesión
@@ -62,9 +86,14 @@ app.UseAntiforgery();
 app.MapStaticAssets().AllowAnonymous();
 app.MapHealthChecks("/health").AllowAnonymous();
 
-if (ConfiguracionSeguridad.ObtenerModo(app.Configuration) == ConfiguracionSeguridad.ModoDesarrollo)
+if (modoAutenticacion == ConfiguracionSeguridad.ModoDesarrollo)
 {
     app.MapEndpointsDesarrollo();
+}
+
+if (modoAutenticacion == ConfiguracionSeguridad.ModoLocal)
+{
+    app.MapEndpointsCuentas();
 }
 
 app.MapEndpointsArchivos();

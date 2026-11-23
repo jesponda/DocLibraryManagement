@@ -633,24 +633,47 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.Property<bool>("Activo")
                         .HasColumnType("bit");
 
+                    b.Property<string>("AreasAsignadas")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("AreasUltimoAcceso")
                         .IsRequired()
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<DateTime?>("BloqueadoHastaUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Correo")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<bool>("DebeCambiarContrasena")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime>("FechaCreacionUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("HashContrasena")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<string>("Identificador")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<int>("IntentosFallidos")
+                        .HasColumnType("int");
+
                     b.Property<string>("NombreVisible")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RolesAsignados")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -659,6 +682,9 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("SelloSeguridad")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("UltimoAccesoUtc")
                         .HasColumnType("datetime2");

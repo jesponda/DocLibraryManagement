@@ -40,6 +40,8 @@ public static class DependencyInjection
         services.AddSingleton<IFileStore, FileStoreEnDisco>();
 
         services.AddScoped<IUsuarioSincronizador, UsuarioSincronizador>();
+        services.AddScoped<ICuentasService, Usuarios.CuentasService>();
+        services.AddScoped<IAutenticacionLocal, Usuarios.AutenticacionLocal>();
         services.AddScoped<ICatalogoService, CatalogoService>();
         services.AddScoped<ICatalogoEstandarService, CatalogoEstandarService>();
         services.Configure<DocumentosOptions>(configuration.GetSection(DocumentosOptions.Seccion));

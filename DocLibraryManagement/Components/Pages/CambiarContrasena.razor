@@ -1,0 +1,53 @@
+@page "/cuenta/contrasena"
+@inject IConfiguration Configuracion
+@inject Microsoft.AspNetCore.DataProtection.IDataProtectionProvider Proteccion
+@using DocLibraryManagement.Application.Usuarios
+@using DocLibraryManagement.Seguridad
+
+<PageTitle>Cambiar contraseña</PageTitle>
+
+<h1>Cambiar contraseña</h1>
+
+@if (ConfiguracionSeguridad.ObtenerModo(Configuracion) != ConfiguracionSeguridad.ModoLocal)
+{
+    <p>Tu contraseña se administra fuera de esta aplicación (Windows).</p>
+}
+else
+{
+    <AuthorizeView>
+        @if (context.User.HasClaim(c => c.Type == SesionLocal.ClaimCambiarContrasena))
+        {
+            <div class="alert alert-warning" style="max-width: 36rem">
+                Entraste con una contraseña temporal. Para continuar, elige una contraseña propia.
+            </div>
+        }
+    </AuthorizeView>
+
+    <Mensajes Error="@mensaje" />
+
+    <form method="post" action="cuenta/contrasena/cambiar" style="max-width: 28rem">
+        <AntiforgeryToken />
+        <div class="mb-3">
+            <label class="form-label" for="actual">Contraseña actual</label>
+            <input class="form-control" id="actual" name="actual" type="password" autocomplete="current-password" maxlength="128" required />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="nueva">Contraseña nueva</label>
+            <input class="form-control" id="nueva" name="nueva" type="password" autocomplete="new-password" maxlength="128" required minlength="@ReglasContrasena.LongitudMinima" />
+            <div class="form-text">Al menos @ReglasContrasena.LongitudMinima caracteres, sin tu nombre de usuario y distinta de la actual.</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="confirmar">Repite la contraseña nueva</label>
+            <input class="form-control" id="confirmar" name="confirmar" type="password" autocomplete="new-password" maxlength="128" required />
+        </div>
+        <button type="submit" class="btn btn-primary">Cambiar contraseña</button>
+    </form>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "m")] private string? M { get; set; }
+
+    private string? mensaje;
+
+    protected override void OnParametersSet() => mensaje = SesionLocal.Leer(Proteccion, M);
+}

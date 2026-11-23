@@ -31,6 +31,27 @@ public class Usuario
     /// <summary>Códigos de área en los que el usuario podía editar en su último acceso (separados por coma).</summary>
     public string AreasUltimoAcceso { get; set; } = "";
 
+    // ---- Cuenta local (modo de autenticación «Local»; en los demás modos estos campos no se usan) ----
+
+    /// <summary>Hash de la contraseña (PBKDF2). Nulo = la persona no puede iniciar sesión con contraseña propia.</summary>
+    public string? HashContrasena { get; set; }
+
+    /// <summary>La contraseña es temporal: debe cambiarla en su próximo acceso.</summary>
+    public bool DebeCambiarContrasena { get; set; }
+
+    public int IntentosFallidos { get; set; }
+
+    public DateTime? BloqueadoHastaUtc { get; set; }
+
+    /// <summary>Cambia con la contraseña, los roles, el estado y los restablecimientos: invalida las sesiones abiertas.</summary>
+    public Guid SelloSeguridad { get; set; } = Guid.NewGuid();
+
+    /// <summary>Roles asignados por un Administrador (separados por coma). «Lector» es implícito y no se guarda.</summary>
+    public string RolesAsignados { get; set; } = "";
+
+    /// <summary>Códigos de área en los que puede editar quien tiene el rol Autor (separados por coma).</summary>
+    public string AreasAsignadas { get; set; } = "";
+
     public bool TuvoRolEnUltimoAcceso(RolSistema rol) =>
         RolesUltimoAcceso.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Contains(rol.ToString(), StringComparer.OrdinalIgnoreCase);

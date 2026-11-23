@@ -45,17 +45,18 @@ aprobó, cuál es la revisión **vigente**, y garantiza que nadie use una revisi
 | 4B | Vencimientos de la revisión periódica: alertas a 30 y 7 días, estado «Vencido», escalamiento, «revisado sin cambios» | **Construido; validación manual pendiente** |
 | 4B+ | Ajuste: el dueño del área ve (solo lectura) los documentos de su área | Terminada y validada |
 | 4C | Reportes (vencimientos, tareas por persona, historial por documento), pantalla de la bitácora, cambio de responsable | **Construido; validación manual pendiente** |
-| V2 | Rediseño del front según el prototipo de Calidad (rama `V2`): tema y menú lateral, Home con áreas/subáreas y nomenclatura; código estándar `SITIO-TIPO-ÁREA-UNIDAD-NNN`; unidad (subárea) obligatoria e inmutable; carga idempotente del catálogo estándar (9 áreas, 66 unidades, 20 tipos); archivos estáticos públicos | **Construido; validación manual pendiente** |
+| V2 | Usuarios y contraseñas propios (módulo *Usuarios y roles*, sin AD) + rediseño del front según el prototipo de Calidad (rama `V2`): tema y menú lateral, Home con áreas/subáreas y nomenclatura; código estándar `SITIO-TIPO-ÁREA-UNIDAD-NNN`; unidad (subárea) obligatoria e inmutable; carga idempotente del catálogo estándar (9 áreas, 66 unidades, 20 tipos); archivos estáticos públicos | **Construido; validación manual pendiente** |
 | 5 | Endurecimiento, guía de operación, script de despliegue | **No iniciada** |
 
 **Notas de la V2:**
+- **Usuarios sin Active Directory:** modo de acceso `Local` (usuario y contraseña propios) con módulo *Usuarios y roles* en Administración. Ver [§6.1](#61-autenticación).
 - **Código del documento:** `Documentos:CodigoSitio` (por omisión `QRT`; vacío = sin prefijo). La unidad es la subárea (código de 2–10 caracteres, único por área, inmutable). Los documentos anteriores conservan su código.
 - **Funciones del prototipo** se cargan aplanadas como subáreas («Subárea · Función»). No se adoptaron líneas productivas, alcance, referencias, matriz de aprobación por rol ni Standard Documents.
 - **Catálogo estándar:** botón en Administración; solo agrega, nunca modifica ni borra. Datos de demostración opcionales en `scripts/datos-demo-v2.sql`.
 - **Seguridad:** los archivos de `wwwroot` (CSS, JS, logo) se sirven sin sesión; los documentos siguen exigiendo sesión y permiso en `/archivos`.
 - En desarrollo la V2 usa su propia base (`DocLibraryManagement-V2-Dev`).
 
-**Verificación automatizada:** 1007 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
+**Verificación automatizada:** 1058 pruebas (unitarias, de integración contra SQL Server y HTTP contra la aplicación real).
 **No hay pruebas de interfaz en navegador:** los clics dentro de las pantallas (subir con el selector de archivos, elegir
 personas en desplegables, botones) solo se han validado manualmente.
 
@@ -308,7 +309,7 @@ DocLibraryManagement/
 │       ├── Revision/PanelRevisionPeriodica.razor   Vencimiento de la vigente y «revisado sin cambios» (proponer/decidir/retirar)
 │       └── Pages/                     Una página por ruta (ver tabla abajo)
 │
-└── DocLibraryManagement.Tests/        (1007 pruebas)
+└── DocLibraryManagement.Tests/        (1058 pruebas)
     ├── Datos/                         BaseDatosFixture, Escenario (servicios reales + reloj simulado), GeneradorPdf
     ├── Vencimientos/                  Reglas de 30/7 días, avisos y escalamiento con reloj simulado, «revisado sin cambios»
     ├── Reportes/                      Reglas puras, exportador (CSV/Excel), vencimientos, tareas, historial y bitácora (alcance por rol)
@@ -497,10 +498,28 @@ Se elige con `Autenticacion:Modo`:
 
 | Modo | Uso | Descripción |
 |---|---|---|
-| `Windows` | **Producción** | Esquema `Negotiate` (Active Directory / Kerberos-NTLM). Es el valor por defecto de `appsettings.json`. |
+| `Local` | **Producción (valor por defecto)** | Lista de usuarios propia de la aplicación, con usuario y contraseña (sin Active Directory). Se gestiona en *Administración → Usuarios y roles*. Ver abajo. |
+| `Windows` | Producción con AD | Esquema `Negotiate` (Active Directory / Kerberos-NTLM) con roles por grupos de AD. Sin verificar de extremo a extremo (ver §1). |
 | `Desarrollo` | Solo `Development` | Cookie con usuarios simulados. **La aplicación no arranca** si este modo se activa en otro entorno. |
 
-El usuario se identifica por `DOMINIO\usuario` y se **sincroniza en la tabla `Usuarios` en su primer acceso**.
+En modo `Windows` el usuario se identifica por `DOMINIO\usuario` y se **sincroniza en la tabla `Usuarios` en su primer acceso**.
+
+**Modo `Local` (usuarios y contraseñas propios).** El Administrador da de alta a cada persona (usuario, nombre, correo, roles y,
+para el rol Autor, las áreas donde puede editar) en *Administración → Usuarios y roles*:
+
+- Se genera una **contraseña temporal** (se muestra una sola vez); al primer acceso la persona **debe cambiarla** y no puede usar
+  nada más hasta hacerlo. Mínimo 10 caracteres, sin su nombre de usuario.
+- Contraseñas con **PBKDF2-SHA256** (sal por contraseña); nunca se guardan ni se registran en claro. **5 intentos fallidos bloquean
+  la cuenta 15 minutos**; el Administrador puede restablecerla (nueva temporal, desbloqueo y cierre de sesiones).
+- **Desactivar** una cuenta o **cambiar sus roles surte efecto en la siguiente solicitud**: la cookie solo identifica a la persona;
+  roles, áreas y estado se leen de la base de datos. Cambiar o restablecer la contraseña cierra las demás sesiones. Nadie puede quitarse
+  el rol de Administrador ni desactivarse, y no puede quedar el sistema sin un Administrador activo con contraseña.
+- **Primer arranque:** si no existe ninguna cuenta con contraseña se crea el Administrador inicial de `Autenticacion:AdministradorInicial`
+  (`admin` por omisión). Si `ContrasenaTemporal` está vacía se genera una y se escribe **una sola vez** en el registro de la aplicación
+  (nivel *Warning*, categoría `Cuentas`). Las migraciones deben estar aplicadas antes de arrancar.
+- La cookie `SGD.Sesion` es HttpOnly, SameSite=Lax y dura 8 horas con renovación. Usa *Data Protection*: en producción conviene
+  conservar su almacén de claves para que las sesiones sobrevivan a un reinicio.
+- Los roles y áreas los asigna el Administrador (ya no hay grupos de AD). Todas las personas son Lector.
 
 ### 6.2 Roles
 
@@ -577,7 +596,8 @@ niveles es `__`) o *user secrets* en desarrollo. **No guardar secretos en el rep
 | Clave | Por defecto | Descripción | ¿Cambiar en prod? |
 |---|---|---|---|
 | `ConnectionStrings:DefaultConnection` | LocalDB `DocLibraryManagement-Dev` | Cadena de conexión a SQL Server | **Sí** |
-| `Autenticacion:Modo` | `Windows` | `Windows` o `Desarrollo` (solo Development) | Dejar `Windows` |
+| `Autenticacion:Modo` | `Local` | `Local`, `Windows` o `Desarrollo` (solo Development) | Dejar `Local` (o `Windows` si hay AD) |
+| `Autenticacion:AdministradorInicial` | `admin` / «Administrador» / contraseña vacía | Primer Administrador del modo `Local` (solo si no hay cuentas) | Opcional |
 | `Autorizacion:Grupos` | Grupos de **ejemplo** (`DOMINIO\DocLib-…`) | Mapeo grupo de AD → rol (+ áreas para Autor) | **Sí, obligatorio** |
 | `Autorizacion:MinutosCache` | `10` | Vigencia del cálculo de roles por usuario | Opcional |
 | `Archivos:RutaBase` | vacío → `App_Data/archivos` | Carpeta del almacén (local o UNC), fuera de wwwroot | **Sí** |
