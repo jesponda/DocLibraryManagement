@@ -25,7 +25,10 @@ public class Area
     public List<AreaTipoDocumento> TiposDocumento { get; set; } = [];
 }
 
-/// <summary>Subárea (segundo y último nivel). Es una clasificación: no forma parte del código.</summary>
+/// <summary>
+/// Subárea (segundo y último nivel). Es la «unidad» del código del documento: <c>QRT-TIPO-ÁREA-UNIDAD-NNN</c>. Las funciones
+/// del estándar de Calidad (p. ej. Process Quality → Die Cast) se cargan aplanadas, cada una como una subárea.
+/// </summary>
 public class SubArea
 {
     public int Id { get; set; }
@@ -33,6 +36,12 @@ public class SubArea
     public int AreaId { get; set; }
 
     public Area? Area { get; set; }
+
+    /// <summary>
+    /// Abreviatura de la unidad (p. ej. "II", "DC"). Única dentro del área y no cambia una vez asignada. Nula solo en
+    /// subáreas anteriores al estándar de código: sin ella no admiten documentos nuevos.
+    /// </summary>
+    public string? Codigo { get; set; }
 
     public required string Nombre { get; set; }
 

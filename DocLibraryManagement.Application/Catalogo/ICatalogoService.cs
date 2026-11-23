@@ -4,7 +4,7 @@ namespace DocLibraryManagement.Application.Catalogo;
 
 public sealed record TipoDocumentoDto(int Id, string Codigo, string Nombre, int MesesRevision, bool Activo);
 
-public sealed record SubAreaDto(int Id, int AreaId, string Nombre, bool Activa, IReadOnlyList<int> TipoIds);
+public sealed record SubAreaDto(int Id, int AreaId, string Nombre, bool Activa, IReadOnlyList<int> TipoIds, string? Codigo = null);
 
 public sealed record AreaDto(
     int Id,
@@ -43,9 +43,18 @@ public interface ICatalogoService
     /// </summary>
     Task EstablecerDuenoDeAreaAsync(Actor actor, int areaId, Guid? usuarioId, CancellationToken ct = default);
 
-    Task<int> CrearSubAreaAsync(Actor actor, int areaId, string nombre, CancellationToken ct = default);
+    /// <summary>
+    /// Crea una subárea (la «unidad» del código de los documentos). Su abreviatura es única dentro del área y no cambia.
+    /// </summary>
+    Task<int> CrearSubAreaAsync(Actor actor, int areaId, string codigo, string nombre, CancellationToken ct = default);
 
+    /// <summary>La abreviatura de una subárea no cambia: forma parte del código de sus documentos.</summary>
     Task ActualizarSubAreaAsync(Actor actor, int subAreaId, string nombre, bool activa, CancellationToken ct = default);
+
+    /// <summary>
+    /// Asigna la abreviatura a una subárea anterior al estándar de código (que no la tiene). Solo se puede hacer una vez.
+    /// </summary>
+    Task AsignarCodigoSubAreaAsync(Actor actor, int subAreaId, string codigo, CancellationToken ct = default);
 
     Task<int> CrearTipoAsync(Actor actor, string codigo, string nombre, int mesesRevision, CancellationToken ct = default);
 
@@ -62,18 +71,25 @@ public interface ICatalogoService
 public static class ReglasCatalogo
 {
     public const int LongitudMinimaCodigo = 2;
+
+    /// <summary>
+    /// Los tipos documentales del estándar de Calidad tienen abreviaturas de una letra (P = Procedimiento, F = Formato,
+    /// R = Registros), así que para ellos el mínimo es 1.
+    /// </summary>
+    public const int LongitudMinimaCodigoTipo = 1;
+
     public const int LongitudMaximaCodigo = 10;
 
     /// <summary>Normaliza un código (mayúsculas, sin espacios) y valida que solo tenga letras y dígitos.</summary>
-    public static string NormalizarCodigo(string? codigo, string que)
+    public static string NormalizarCodigo(string? codigo, string que, int longitudMinima = LongitudMinimaCodigo)
     {
         var limpio = (codigo ?? "").Trim().ToUpperInvariant();
 
-        if (limpio.Length is < LongitudMinimaCodigo or > LongitudMaximaCodigo
+        if (limpio.Length < longitudMinima || limpio.Length > LongitudMaximaCodigo
             || !limpio.All(c => c is >= 'A' and <= 'Z' or >= '0' and <= '9'))
         {
             throw new ReglaNegocioException(
-                $"La abreviatura de {que} debe tener entre {LongitudMinimaCodigo} y {LongitudMaximaCodigo} caracteres, solo letras y números.");
+                $"La abreviatura de {que} debe tener entre {longitudMinima} y {LongitudMaximaCodigo} caracteres, solo letras y números.");
         }
 
         return limpio;

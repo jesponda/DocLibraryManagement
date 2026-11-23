@@ -12,7 +12,7 @@ public class DocumentoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDato
         new(titulo, areaId, subAreaId, tipoId);
 
     [Fact]
-    public async Task Crear_asigna_el_codigo_TTT_AAA_NNN_y_la_revision_Rev00_en_borrador()
+    public async Task Crear_asigna_el_codigo_estandar_QRT_y_la_revision_Rev00_en_borrador()
     {
         using var e = new Escenario(bd);
         var admin = await e.NuevoAdminAsync();
@@ -21,7 +21,7 @@ public class DocumentoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDato
 
         var doc = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId));
 
-        Assert.Equal($"{codigoTipo}-{codigoArea}-001", doc.Codigo);
+        Assert.Equal(Escenario.CodigoEsperado(codigoTipo, codigoArea), doc.Codigo); // QRT-TIPO-ÁREA-GEN-001
         Assert.Equal(EstadoDocumento.Activo, doc.Estado);
         var rev = Assert.Single(doc.Revisiones);
         Assert.Equal("Rev.00", rev.Etiqueta);
@@ -151,8 +151,8 @@ public class DocumentoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDato
         var admin = await e.NuevoAdminAsync();
         var (areaId, _, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
         var (otraAreaId, _, _, _) = await e.NuevaAreaConTipoAsync(admin);
-        var subDeOtra = await e.Catalogo.CrearSubAreaAsync(admin, otraAreaId, "Ajena");
-        var sub = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "Propia");
+        var subDeOtra = await e.Catalogo.CrearSubAreaAsync(admin, otraAreaId, "AJ", "Ajena");
+        var sub = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "PR", "Propia");
 
         await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CrearAsync(admin, Nuevo(areaId, tipoId, subAreaId: subDeOtra)));
 
@@ -272,42 +272,235 @@ public class DocumentoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDato
         Assert.Null(await e.Documentos.ObtenerAsync(admin, int.MaxValue));
     }
 
+    /// <summary>
+    /// Deja el documento como los anteriores al estándar de código: sin unidad (subárea) y con un código viejo (como PRO-CAL-004).
+    /// Devuelve ese código.
+    /// </summary>
+    private static async Task<string> VolverAnteriorAlEstandarAsync(Escenario e, int documentoId)
+    {
+        await using var db = e.Db();
+        await db.Documentos.Where(d => d.Id == documentoId).ExecuteUpdateAsync(s => s
+            .SetProperty(d => d.SubAreaId, (int?)null)
+            .SetProperty(d => d.Codigo, d => "ANT-" + d.Id));
+        return await db.Documentos.Where(d => d.Id == documentoId).Select(d => d.Codigo).SingleAsync();
+    }
+
     [Fact]
-    public async Task Cambiar_la_subarea_se_audita_y_no_toca_el_codigo()
+    public async Task La_subarea_de_un_documento_nuevo_forma_parte_del_codigo_y_ya_no_se_cambia()
     {
         using var e = new Escenario(bd);
         var admin = await e.NuevoAdminAsync();
         var (areaId, codigoArea, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
         var autor = await e.NuevoAutorAsync(codigoArea);
-        var sub = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "Línea 2");
+        var otra = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "L2", "Línea 2");
+        var doc = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId, subAreaId: otra));
+
+        var ex = await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CambiarSubAreaAsync(autor, doc.Id, otra));
+
+        Assert.Contains("forma parte de su código", ex.Message);
+        Assert.Contains("-L2-", doc.Codigo);
+        Assert.Equal("Línea 2", (await e.Documentos.ObtenerAsync(autor, doc.Id))!.SubArea);
+    }
+
+    [Fact]
+    public async Task A_un_documento_anterior_al_estandar_se_le_asigna_la_unidad_una_vez_sin_tocar_su_codigo_y_queda_auditado()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
+        var autor = await e.NuevoAutorAsync(codigoArea);
         var doc = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId));
+        var codigoViejo = await VolverAnteriorAlEstandarAsync(e, doc.Id);
+        var sub = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "L2", "Línea 2");
 
         await e.Documentos.CambiarSubAreaAsync(autor, doc.Id, sub);
 
         var despues = await e.Documentos.ObtenerAsync(autor, doc.Id);
         Assert.Equal("Línea 2", despues!.SubArea);
-        Assert.Equal(doc.Codigo, despues.Codigo);
-        var evento = (await e.AuditoriaDeAsync(doc.Codigo)).Single(x => x.Accion == "Documento.CambiarSubArea");
+        Assert.Equal(codigoViejo, despues.Codigo);                  // el código no cambia
+        var evento = (await e.AuditoriaDeAsync(codigoViejo)).Single(x => x.Accion == "Documento.CambiarSubArea");
         Assert.Equal("(sin subárea)", evento.ValorAnterior);
         Assert.Equal("Línea 2", evento.ValorNuevo);
-
-        await e.Documentos.CambiarSubAreaAsync(autor, doc.Id, null);
-        Assert.Null((await e.Documentos.ObtenerAsync(autor, doc.Id))!.SubArea);
+        await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CambiarSubAreaAsync(autor, doc.Id, sub)); // ya no cambia
     }
 
     [Fact]
-    public async Task No_se_cambia_a_una_subarea_de_otra_area_ni_sin_permiso()
+    public async Task Asignar_la_unidad_exige_elegir_una_y_que_sea_del_area_y_con_permiso()
     {
         using var e = new Escenario(bd);
         var admin = await e.NuevoAdminAsync();
         var (areaId, codigoArea, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
         var (otraAreaId, _, _, _) = await e.NuevaAreaConTipoAsync(admin);
-        var subAjena = await e.Catalogo.CrearSubAreaAsync(admin, otraAreaId, "Ajena");
+        var subAjena = await e.Catalogo.CrearSubAreaAsync(admin, otraAreaId, "AJ", "Ajena");
         var autor = await e.NuevoAutorAsync(codigoArea);
         var ajeno = await e.NuevoAutorAsync("OTRA");
         var doc = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId));
+        await VolverAnteriorAlEstandarAsync(e, doc.Id);
 
         await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CambiarSubAreaAsync(autor, doc.Id, subAjena));
+        await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CambiarSubAreaAsync(autor, doc.Id, null));
         await Assert.ThrowsAsync<AccesoDenegadoException>(() => e.Documentos.CambiarSubAreaAsync(ajeno, doc.Id, null));
+    }
+
+    [Fact]
+    public async Task Asignar_una_unidad_cuyo_consecutivo_ya_esta_en_uso_da_un_mensaje_claro()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
+        var autor = await e.NuevoAutorAsync(codigoArea);
+        var primero = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId));          // GEN-001
+        await VolverAnteriorAlEstandarAsync(e, primero.Id);                                  // queda como «anterior», con consecutivo 1
+        var segundo = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId));          // la unidad GEN vuelve a empezar en 001
+        var gen = (await e.Catalogo.ListarAreasAsync()).Single(a => a.Id == areaId).SubAreas.Single().Id;
+
+        var ex = await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CambiarSubAreaAsync(autor, primero.Id, gen));
+
+        Assert.Contains("consecutivo", ex.Message);
+        Assert.EndsWith("-001", segundo.Codigo);
+    }
+
+    // ---------- La unidad en el código ----------
+
+    [Fact]
+    public async Task Cada_unidad_lleva_su_propia_numeracion_y_su_abreviatura_va_en_el_codigo()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, codigoTipo) = await e.NuevaAreaConTipoAsync(admin);
+        var autor = await e.NuevoAutorAsync(codigoArea);
+        var ii = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "II", "Incoming Inspection");
+
+        var g1 = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId, subAreaId: ii));
+        var g2 = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId, subAreaId: ii));
+        var enOtra = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId, subAreaId: (await e.Catalogo.CrearSubAreaAsync(admin, areaId, "MET", "Metrología"))));
+
+        Assert.Equal($"QRT-{codigoTipo}-{codigoArea}-II-001", g1.Codigo);
+        Assert.Equal($"QRT-{codigoTipo}-{codigoArea}-II-002", g2.Codigo);
+        Assert.Equal($"QRT-{codigoTipo}-{codigoArea}-MET-001", enOtra.Codigo);   // otra unidad: vuelve a empezar en 001
+    }
+
+    [Fact]
+    public async Task Con_una_sola_unidad_activa_no_hace_falta_elegirla()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, codigoTipo) = await e.NuevaAreaConTipoAsync(admin);
+        var autor = await e.NuevoAutorAsync(codigoArea);
+
+        var doc = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId)); // sin subárea indicada
+
+        Assert.Equal(Escenario.CodigoEsperado(codigoTipo, codigoArea), doc.Codigo);
+        Assert.Equal("Unidad general", (await e.Documentos.ObtenerAsync(autor, doc.Id))!.SubArea);
+    }
+
+    [Fact]
+    public async Task Con_varias_unidades_hay_que_elegir_una()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
+        var autor = await e.NuevoAutorAsync(codigoArea);
+        await e.Catalogo.CrearSubAreaAsync(admin, areaId, "L2", "Línea 2");
+
+        var ex = await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId)));
+
+        Assert.Contains("Elige la subárea", ex.Message);
+    }
+
+    [Fact]
+    public async Task Un_area_sin_unidades_no_admite_documentos_y_el_mensaje_dice_que_hacer()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var areaId = await e.Catalogo.CrearAreaAsync(admin, Escenario.CodigoUnico("A"), "Sin unidades");
+        var tipoId = await e.Catalogo.CrearTipoAsync(admin, Escenario.CodigoUnico("T"), "Tipo", 12);
+        await e.Catalogo.EstablecerTiposDeAreaAsync(admin, areaId, [tipoId]);
+
+        var ex = await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CrearAsync(admin, Nuevo(areaId, tipoId)));
+
+        Assert.Contains("no tiene subáreas", ex.Message);
+        Assert.Contains("Administrador", ex.Message);
+    }
+
+    [Fact]
+    public async Task Una_unidad_desactivada_o_sin_abreviatura_no_admite_documentos_nuevos()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, _, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
+        var desactivada = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "OFF", "Desactivada");
+        await e.Catalogo.ActualizarSubAreaAsync(admin, desactivada, "Desactivada", activa: false);
+        int sinCodigo;
+        await using (var db = e.Db())
+        {
+            var anterior = new SubArea { AreaId = areaId, Nombre = "Anterior sin abreviatura" };
+            db.SubAreas.Add(anterior);
+            await db.SaveChangesAsync();
+            sinCodigo = anterior.Id;
+        }
+
+        await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CrearAsync(admin, Nuevo(areaId, tipoId, subAreaId: desactivada)));
+        var ex = await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CrearAsync(admin, Nuevo(areaId, tipoId, subAreaId: sinCodigo)));
+        Assert.Contains("no tiene abreviatura", ex.Message);
+    }
+
+    [Fact]
+    public async Task Las_unidades_sin_abreviatura_no_cuentan_para_elegir_la_unica_unidad_por_omision()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, codigoTipo) = await e.NuevaAreaConTipoAsync(admin);
+        await using (var db = e.Db())
+        {
+            db.SubAreas.Add(new SubArea { AreaId = areaId, Nombre = "Anterior sin abreviatura" });
+            await db.SaveChangesAsync();
+        }
+
+        var doc = await e.Documentos.CrearAsync(admin, Nuevo(areaId, tipoId)); // sigue habiendo una sola unidad usable (GEN)
+
+        Assert.Equal(Escenario.CodigoEsperado(codigoTipo, codigoArea), doc.Codigo);
+    }
+
+    [Theory]
+    [InlineData("MTY", "MTY-")]
+    [InlineData("qrt", "QRT-")]          // se normaliza a mayúsculas
+    [InlineData("", "")]                 // sin sitio: el código empieza en el tipo
+    public async Task El_codigo_de_sitio_es_configurable(string sitio, string prefijoEsperado)
+    {
+        using var e = new Escenario(bd, extra: new Dictionary<string, string?> { ["Documentos:CodigoSitio"] = sitio });
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, codigoTipo) = await e.NuevaAreaConTipoAsync(admin);
+
+        var doc = await e.Documentos.CrearAsync(admin, Nuevo(areaId, tipoId));
+
+        Assert.Equal($"{prefijoEsperado}{codigoTipo}-{codigoArea}-{Escenario.UnidadPorOmision}-001", doc.Codigo);
+    }
+
+    [Fact]
+    public async Task Un_codigo_de_sitio_invalido_se_reporta_claro_en_lugar_de_crear_un_codigo_roto()
+    {
+        using var e = new Escenario(bd, extra: new Dictionary<string, string?> { ["Documentos:CodigoSitio"] = "no valido!" });
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, _, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => e.Documentos.CrearAsync(admin, Nuevo(areaId, tipoId)));
+
+        Assert.Contains("Documentos:CodigoSitio", ex.Message);
+    }
+
+    [Fact]
+    public async Task El_resumen_del_documento_lleva_el_codigo_de_la_unidad_en_su_nombre_de_subarea()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
+        var autor = await e.NuevoAutorAsync(codigoArea);
+        var sub = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "DC", "Process Quality · Die Cast");
+
+        var doc = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId, subAreaId: sub));
+
+        Assert.Equal("Process Quality · Die Cast", doc.SubArea);
+        Assert.Contains("-DC-", doc.Codigo);
     }
 }

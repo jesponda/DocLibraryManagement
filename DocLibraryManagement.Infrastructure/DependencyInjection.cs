@@ -41,6 +41,8 @@ public static class DependencyInjection
 
         services.AddScoped<IUsuarioSincronizador, UsuarioSincronizador>();
         services.AddScoped<ICatalogoService, CatalogoService>();
+        services.AddScoped<ICatalogoEstandarService, CatalogoEstandarService>();
+        services.Configure<DocumentosOptions>(configuration.GetSection(DocumentosOptions.Seccion));
         services.AddScoped<IDocumentoService, DocumentoService>();
         services.AddScoped<IRevisionService, RevisionService>();
         services.AddScoped<IFlujoService, FlujoService>();

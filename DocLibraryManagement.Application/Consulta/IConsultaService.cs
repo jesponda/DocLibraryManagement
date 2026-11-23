@@ -57,6 +57,16 @@ public sealed record DocumentoVigenteDto(
     DateTime? FechaProximaRevisionUtc,
     string Responsable);
 
+/// <summary>Una subárea (unidad) del Home, con cuántos documentos vigentes tiene.</summary>
+public sealed record ResumenSubAreaDto(int Id, string? Codigo, string Nombre, int Documentos);
+
+public sealed record ResumenAreaDto(int Id, string Codigo, string Nombre, int Documentos, IReadOnlyList<ResumenSubAreaDto> SubAreas);
+
+public sealed record ResumenTipoDto(int Id, string Codigo, string Nombre, int Documentos);
+
+/// <summary>Áreas (con sus subáreas) y tipos activos, con el número de documentos vigentes de cada uno. Es la base del Home.</summary>
+public sealed record ResumenCatalogoDto(IReadOnlyList<ResumenAreaDto> Areas, IReadOnlyList<ResumenTipoDto> Tipos);
+
 /// <summary>
 /// Consulta para lectura (7.3, 7.7). Lo que aquí se devuelve es lectura abierta a cualquier usuario
 /// autenticado, por eso SOLO incluye revisiones vigentes de documentos activos, salvo la búsqueda de
@@ -64,6 +74,12 @@ public sealed record DocumentoVigenteDto(
 /// </summary>
 public interface IConsultaService
 {
+    /// <summary>
+    /// Áreas, subáreas y tipos activos con su número de documentos VIGENTES (de documentos activos), para el Home. Es de lectura
+    /// abierta: cuenta lo mismo que muestra la lista maestra, nunca borradores ni obsoletos.
+    /// </summary>
+    Task<ResumenCatalogoDto> ResumenCatalogoAsync(CancellationToken ct = default);
+
     Task<Pagina<FilaListaMaestra>> ListaMaestraAsync(FiltroListaMaestra filtro, int pagina = 1, int tamano = 25, CancellationToken ct = default);
 
     /// <summary>La lista completa con el mismo filtro, para exportar. Tiene un tope (<see cref="ReglasBusqueda.MaximoFilasExportacion"/>).</summary>

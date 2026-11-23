@@ -21,9 +21,14 @@ internal sealed class SubAreaConfig : IEntityTypeConfiguration<SubArea>
     public void Configure(EntityTypeBuilder<SubArea> b)
     {
         b.HasKey(x => x.Id);
+        b.Property(x => x.Codigo).HasMaxLength(10);
         b.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
         b.HasOne(x => x.Area).WithMany(a => a.SubAreas).HasForeignKey(x => x.AreaId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.AreaId, x.Nombre }).IsUnique();
+
+        // La unidad es parte del código del documento: no puede repetirse dentro del área. Las subáreas anteriores al
+        // estándar no tienen código (nulo) y no se consideran.
+        b.HasIndex(x => new { x.AreaId, x.Codigo }, "UX_SubArea_CodigoPorArea").IsUnique().HasFilter("[Codigo] IS NOT NULL");
     }
 }
 
@@ -78,7 +83,8 @@ internal sealed class DocumentoConfig : IEntityTypeConfiguration<Documento>
     public void Configure(EntityTypeBuilder<Documento> b)
     {
         b.HasKey(x => x.Id);
-        b.Property(x => x.Codigo).HasMaxLength(30).IsRequired();
+        // SITIO-TIPO-ÁREA-UNIDAD-NNN: hasta 4 segmentos de 10 caracteres, 4 guiones y el consecutivo.
+        b.Property(x => x.Codigo).HasMaxLength(60).IsRequired();
         b.Property(x => x.Titulo).HasMaxLength(300).IsRequired();
         b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
 
@@ -87,9 +93,10 @@ internal sealed class DocumentoConfig : IEntityTypeConfiguration<Documento>
         b.HasOne(x => x.TipoDocumento).WithMany().HasForeignKey(x => x.TipoDocumentoId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Responsable).WithMany().HasForeignKey(x => x.ResponsableId).OnDelete(DeleteBehavior.Restrict);
 
-        // 6.1: el código y el consecutivo por (tipo, área) son únicos y no se reutilizan.
+        // 6.1: el código y el consecutivo por (tipo, área, unidad) son únicos y no se reutilizan. Los documentos anteriores
+        // al estándar no tienen unidad (nula): SQL Server las trata como iguales, así que para ellos sigue siendo por (tipo, área).
         b.HasIndex(x => x.Codigo).IsUnique();
-        b.HasIndex(x => new { x.TipoDocumentoId, x.AreaId, x.Consecutivo }).IsUnique();
+        b.HasIndex(x => new { x.TipoDocumentoId, x.AreaId, x.SubAreaId, x.Consecutivo }).IsUnique();
     }
 }
 
@@ -191,7 +198,7 @@ internal sealed class NotificacionConfig : IEntityTypeConfiguration<Notificacion
         b.Property(x => x.Tipo).HasMaxLength(50).IsRequired();
         b.Property(x => x.Asunto).HasMaxLength(200).IsRequired();
         b.Property(x => x.Cuerpo).IsRequired();
-        b.Property(x => x.CodigoDocumento).HasMaxLength(30);
+        b.Property(x => x.CodigoDocumento).HasMaxLength(60);
         b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
         b.Property(x => x.UltimoError).HasMaxLength(1000);
         b.Property(x => x.Clave).HasMaxLength(200);

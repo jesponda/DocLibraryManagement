@@ -84,8 +84,8 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
 
                     b.Property<string>("Codigo")
                         .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
 
                     b.Property<int>("Consecutivo")
                         .HasColumnType("int");
@@ -123,8 +123,9 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
 
                     b.HasIndex("SubAreaId");
 
-                    b.HasIndex("TipoDocumentoId", "AreaId", "Consecutivo")
-                        .IsUnique();
+                    b.HasIndex("TipoDocumentoId", "AreaId", "SubAreaId", "Consecutivo")
+                        .IsUnique()
+                        .HasFilter("[SubAreaId] IS NOT NULL");
 
                     b.ToTable("Documentos");
                 });
@@ -246,8 +247,8 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("CodigoDocumento")
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
 
                     b.Property<string>("Cuerpo")
                         .IsRequired()
@@ -552,6 +553,10 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
                     b.Property<int>("AreaId")
                         .HasColumnType("int");
 
+                    b.Property<string>("Codigo")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -561,6 +566,10 @@ namespace DocLibraryManagement.Infrastructure.Persistencia.Migraciones
 
                     b.HasIndex("AreaId", "Nombre")
                         .IsUnique();
+
+                    b.HasIndex(new[] { "AreaId", "Codigo" }, "UX_SubArea_CodigoPorArea")
+                        .IsUnique()
+                        .HasFilter("[Codigo] IS NOT NULL");
 
                     b.ToTable("SubAreas");
                 });

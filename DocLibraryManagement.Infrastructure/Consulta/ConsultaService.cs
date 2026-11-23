@@ -21,6 +21,36 @@ internal sealed partial class ConsultaService(IDbContextFactory<AppDbContext> fa
     [GeneratedRegex(@"^Rev\.(\d+)(?:\.(\d+))?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PatronEtiqueta();
 
+    // ---------- Resumen para el Home ----------
+
+    public async Task<ResumenCatalogoDto> ResumenCatalogoAsync(CancellationToken ct = default)
+    {
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+
+        // Una sola pasada sobre lo vigente: cuántos hay por área, subárea y tipo.
+        var vigentes = await VigentesDeDocumentosActivos(db)
+            .Select(r => new { r.Documento!.AreaId, r.Documento.SubAreaId, r.Documento.TipoDocumentoId })
+            .ToListAsync(ct);
+
+        var porArea = vigentes.GroupBy(v => v.AreaId).ToDictionary(g => g.Key, g => g.Count());
+        var porSub = vigentes.Where(v => v.SubAreaId != null).GroupBy(v => v.SubAreaId!.Value).ToDictionary(g => g.Key, g => g.Count());
+        var porTipo = vigentes.GroupBy(v => v.TipoDocumentoId).ToDictionary(g => g.Key, g => g.Count());
+
+        var areas = await db.Areas.AsNoTracking().Where(a => a.Activa)
+            .Include(a => a.SubAreas.Where(s => s.Activa))
+            .OrderBy(a => a.Nombre)
+            .AsSplitQuery()
+            .ToListAsync(ct);
+
+        var tipos = await db.TiposDocumento.AsNoTracking().Where(t => t.Activo).OrderBy(t => t.Codigo).ToListAsync(ct);
+
+        return new ResumenCatalogoDto(
+            [.. areas.Select(a => new ResumenAreaDto(
+                a.Id, a.Codigo, a.Nombre, porArea.GetValueOrDefault(a.Id),
+                [.. a.SubAreas.OrderBy(s => s.Nombre).Select(s => new ResumenSubAreaDto(s.Id, s.Codigo, s.Nombre, porSub.GetValueOrDefault(s.Id)))]))],
+            [.. tipos.Select(t => new ResumenTipoDto(t.Id, t.Codigo, t.Nombre, porTipo.GetValueOrDefault(t.Id)))]);
+    }
+
     // ---------- Lista maestra ----------
 
     public async Task<Pagina<FilaListaMaestra>> ListaMaestraAsync(FiltroListaMaestra filtro, int pagina = 1, int tamano = 25, CancellationToken ct = default)

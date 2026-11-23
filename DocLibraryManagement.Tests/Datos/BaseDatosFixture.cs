@@ -43,12 +43,14 @@ public sealed class BaseDatosFixture : IAsyncLifetime
             UltimoAccesoUtc = DateTime.UtcNow,
         };
         var area = new Area { Codigo = sufijo, Nombre = $"Área {sufijo}" };
+        var unidad = new SubArea { Area = area, Codigo = "GEN", Nombre = "Unidad general" };
         var tipo = new TipoDocumento { Codigo = sufijo, Nombre = $"Tipo {sufijo}" };
         var documento = new Documento
         {
-            Codigo = Documento.ConstruirCodigo(tipo.Codigo, area.Codigo, 1),
+            Codigo = Documento.ConstruirCodigo("QRT", tipo.Codigo, area.Codigo, unidad.Codigo!, 1),
             Titulo = "Procedimiento de prueba",
             Area = area,
+            SubArea = unidad,
             TipoDocumento = tipo,
             Consecutivo = 1,
             Responsable = usuario,

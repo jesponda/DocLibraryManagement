@@ -6,10 +6,36 @@ namespace DocLibraryManagement.Tests.Datos;
 public class CatalogoYCodigosTests(BaseDatosFixture bd) : IClassFixture<BaseDatosFixture>
 {
     [Fact]
-    public void El_codigo_sigue_el_formato_TTT_AAA_NNN()
+    public void El_codigo_sigue_el_estandar_SITIO_TIPO_AREA_UNIDAD_NNN()
     {
-        Assert.Equal("PRO-CAL-012", Documento.ConstruirCodigo("PRO", "CAL", 12));
-        Assert.Equal("INS-MAN-001", Documento.ConstruirCodigo("INS", "MAN", 1));
+        Assert.Equal("QRT-F-QA-II-001", Documento.ConstruirCodigo("QRT", "F", "QA", "II", 1));
+        Assert.Equal("QRT-PI-QA-DC-012", Documento.ConstruirCodigo("QRT", "PI", "QA", "DC", 12));
+        Assert.Equal("QRT-LOTO-ENG-MNT-123", Documento.ConstruirCodigo("QRT", "LOTO", "ENG", "MNT", 123));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Sin_sitio_configurado_el_codigo_empieza_en_el_tipo(string? sitio)
+    {
+        Assert.Equal("F-QA-II-001", Documento.ConstruirCodigo(sitio, "F", "QA", "II", 1));
+    }
+
+    [Fact]
+    public void Un_consecutivo_de_cuatro_digitos_no_se_trunca()
+    {
+        Assert.Equal("QRT-F-QA-II-1000", Documento.ConstruirCodigo("QRT", "F", "QA", "II", 1000));
+    }
+
+    [Fact]
+    public void El_codigo_mas_largo_posible_cabe_en_la_columna()
+    {
+        var diezLetras = new string('X', 10);
+
+        var codigo = Documento.ConstruirCodigo(diezLetras, diezLetras, diezLetras, diezLetras, 999_999);
+
+        Assert.True(codigo.Length <= 60, $"El código más largo mide {codigo.Length}");
     }
 
     [Theory]
@@ -44,7 +70,7 @@ public class CatalogoYCodigosTests(BaseDatosFixture bd) : IClassFixture<BaseDato
     }
 
     [Fact]
-    public async Task El_consecutivo_no_se_repite_por_tipo_y_area()
+    public async Task El_consecutivo_no_se_repite_por_tipo_area_y_unidad()
     {
         await using var db = bd.Crear();
         var doc = await BaseDatosFixture.CrearDocumentoAsync(db);
@@ -54,6 +80,7 @@ public class CatalogoYCodigosTests(BaseDatosFixture bd) : IClassFixture<BaseDato
             Codigo = "OTRO-CODIGO",
             Titulo = "Mismo consecutivo",
             AreaId = doc.AreaId,
+            SubAreaId = doc.SubAreaId,
             TipoDocumentoId = doc.TipoDocumentoId,
             Consecutivo = doc.Consecutivo,
             ResponsableId = doc.ResponsableId,
@@ -61,6 +88,58 @@ public class CatalogoYCodigosTests(BaseDatosFixture bd) : IClassFixture<BaseDato
         });
 
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task El_mismo_consecutivo_si_se_permite_en_otra_unidad_del_area()
+    {
+        await using var db = bd.Crear();
+        var doc = await BaseDatosFixture.CrearDocumentoAsync(db);
+        var otraUnidad = new SubArea { AreaId = doc.AreaId, Codigo = "OTR", Nombre = "Otra unidad" };
+        db.SubAreas.Add(otraUnidad);
+        await db.SaveChangesAsync();
+
+        db.Documentos.Add(new Documento
+        {
+            Codigo = "QRT-OTRO-001",
+            Titulo = "Primero de su unidad",
+            AreaId = doc.AreaId,
+            SubAreaId = otraUnidad.Id,
+            TipoDocumentoId = doc.TipoDocumentoId,
+            Consecutivo = doc.Consecutivo,
+            ResponsableId = doc.ResponsableId,
+            FechaCreacionUtc = DateTime.UtcNow,
+        });
+
+        await db.SaveChangesAsync(); // no lanza: cada unidad lleva su propia numeración
+    }
+
+    [Fact]
+    public async Task La_abreviatura_de_la_subarea_no_se_repite_dentro_del_area_pero_si_entre_areas()
+    {
+        await using var db = bd.Crear();
+        var sufijo = Guid.NewGuid().ToString("N")[..8];
+        var area1 = new Area { Codigo = sufijo[..6] + "A1", Nombre = "Área 1" };
+        var area2 = new Area { Codigo = sufijo[..6] + "A2", Nombre = "Área 2" };
+        db.SubAreas.Add(new SubArea { Area = area1, Codigo = "SIP", Nombre = "Shipping" });
+        db.SubAreas.Add(new SubArea { Area = area2, Codigo = "SIP", Nombre = "Shipments" }); // misma abreviatura en otra área: válido
+        await db.SaveChangesAsync();
+
+        db.SubAreas.Add(new SubArea { AreaId = area1.Id, Codigo = "SIP", Nombre = "Otro nombre" });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Las_subareas_anteriores_al_estandar_pueden_no_tener_abreviatura_y_repetirse_sin_ella()
+    {
+        await using var db = bd.Crear();
+        var sufijo = Guid.NewGuid().ToString("N")[..8];
+        var area = new Area { Codigo = sufijo, Nombre = "Área" };
+        db.SubAreas.Add(new SubArea { Area = area, Nombre = "Anterior 1" });
+        db.SubAreas.Add(new SubArea { Area = area, Nombre = "Anterior 2" });
+
+        await db.SaveChangesAsync(); // dos nulos en la misma área: no cuentan para la unicidad
     }
 
     [Fact]

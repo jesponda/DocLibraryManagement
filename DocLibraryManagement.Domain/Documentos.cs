@@ -4,7 +4,7 @@ public class Documento
 {
     public int Id { get; set; }
 
-    /// <summary>Código completo, p. ej. "PRO-CAL-012". No cambia con las revisiones.</summary>
+    /// <summary>Código completo, p. ej. "QRT-F-QA-II-012". No cambia con las revisiones ni se reutiliza.</summary>
     public required string Codigo { get; set; }
 
     public required string Titulo { get; set; }
@@ -21,7 +21,7 @@ public class Documento
 
     public TipoDocumento? TipoDocumento { get; set; }
 
-    /// <summary>Consecutivo por (tipo, área). No se reutiliza, aunque el documento se retire.</summary>
+    /// <summary>Consecutivo por (tipo, área, unidad). No se reutiliza, aunque el documento se retire.</summary>
     public int Consecutivo { get; set; }
 
     public EstadoDocumento Estado { get; set; } = EstadoDocumento.Activo;
@@ -34,9 +34,17 @@ public class Documento
 
     public List<RevisionDocumento> Revisiones { get; set; } = [];
 
-    /// <summary>Formato del código: TTT-AAA-NNN.</summary>
-    public static string ConstruirCodigo(string codigoTipo, string codigoArea, int consecutivo) =>
-        $"{codigoTipo}-{codigoArea}-{consecutivo:000}";
+    /// <summary>
+    /// Formato del código (estándar de Calidad): <c>SITIO-TIPO-ÁREA-UNIDAD-NNN</c>, p. ej. <c>QRT-F-QA-II-001</c>. El consecutivo es
+    /// por tipo, área y unidad y no se reutiliza. Sin sitio (configuración vacía) el código empieza en el tipo.
+    /// </summary>
+    public static string ConstruirCodigo(string? sitio, string codigoTipo, string codigoArea, string codigoUnidad, int consecutivo)
+    {
+        var numero = $"{consecutivo:000}";
+        return string.IsNullOrWhiteSpace(sitio)
+            ? $"{codigoTipo}-{codigoArea}-{codigoUnidad}-{numero}"
+            : $"{sitio}-{codigoTipo}-{codigoArea}-{codigoUnidad}-{numero}";
+    }
 }
 
 public class RevisionDocumento

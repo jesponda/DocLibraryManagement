@@ -131,16 +131,29 @@ else
             <h2 class="h6">Subáreas</h2>
             @if (seleccionada.SubAreas.Count == 0)
             {
-                <p class="text-muted">Esta área no tiene subáreas.</p>
+                <div class="alert alert-warning">
+                    Esta área no tiene subáreas. <strong>Cada subárea es la «unidad» del código del documento</strong>
+                    (<code>QRT-TIPO-@seleccionada.Codigo-UNIDAD-NNN</code>): sin al menos una, el área no admite documentos nuevos.
+                </div>
             }
             else
             {
                 <table class="table table-sm align-middle">
-                    <thead><tr><th>Nombre</th><th>Tipos</th><th>Estado</th><th></th></tr></thead>
+                    <thead><tr><th>Unidad</th><th>Nombre</th><th>Tipos</th><th>Estado</th><th></th></tr></thead>
                     <tbody>
                     @foreach (var s in seleccionada.SubAreas)
                     {
                         <tr class="@(s.Id == subSeleccionada?.Id ? "table-active" : s.Activa ? "" : "text-muted")">
+                            <td>
+                                @if (s.Codigo is null)
+                                {
+                                    <span class="badge text-bg-warning" title="Anterior al estándar de código: no admite documentos nuevos hasta tener abreviatura">sin abreviatura</span>
+                                }
+                                else
+                                {
+                                    <code>@s.Codigo</code>
+                                }
+                            </td>
                             <td>@s.Nombre</td>
                             <td>@(s.TipoIds.Count == 0 ? "Hereda los del área" : $"{s.TipoIds.Count} propios")</td>
                             <td>@(s.Activa ? "Activa" : "Desactivada")</td>
@@ -154,7 +167,20 @@ else
             @if (subSeleccionada is not null)
             {
                 <div class="border rounded p-3 mb-3">
-                    <h3 class="h6">Editando «@subSeleccionada.Nombre»</h3>
+                    <h3 class="h6">Editando «@subSeleccionada.Nombre» @if (subSeleccionada.Codigo is not null) { <code>@subSeleccionada.Codigo</code> }</h3>
+                    @if (subSeleccionada.Codigo is null)
+                    {
+                        <div class="row g-2 align-items-end mb-3">
+                            <div class="col-sm-4">
+                                <label class="form-label" for="subCodigo">Abreviatura de la unidad</label>
+                                <input id="subCodigo" class="form-control" maxlength="10" @bind="subCodigo" />
+                            </div>
+                            <div class="col-sm-8">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="AsignarCodigoSubAsync">Asignar abreviatura</button>
+                                <span class="text-muted small ms-2">Solo se puede asignar una vez: forma parte del código de los documentos.</span>
+                            </div>
+                        </div>
+                    }
                     <div class="row g-2 align-items-end">
                         <div class="col-sm-7">
                             <label class="form-label" for="subNombre">Nombre</label>
@@ -187,13 +213,18 @@ else
             }
 
             <div class="row g-2">
-                <div class="col-sm-8">
-                    <label class="form-label" for="nuevaSub">Nueva subárea</label>
+                <div class="col-sm-3">
+                    <label class="form-label" for="nuevaSubCodigo">Abreviatura (unidad)</label>
+                    <input id="nuevaSubCodigo" class="form-control" maxlength="10" placeholder="p. ej. II" @bind="nuevaSubCodigo" />
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label" for="nuevaSub">Nombre de la nueva subárea</label>
                     <input id="nuevaSub" class="form-control" maxlength="200" @bind="nuevaSub" />
                 </div>
-                <div class="col-sm-4 d-flex align-items-end">
+                <div class="col-sm-3 d-flex align-items-end">
                     <button class="btn btn-outline-primary" @onclick="CrearSubAsync">Agregar</button>
                 </div>
+                <div class="form-text">La abreviatura va en el código de los documentos y <strong>no se puede cambiar</strong> después.</div>
             </div>
         </div>
     </div>
@@ -218,6 +249,8 @@ else
     private bool subActiva = true;
     private HashSet<int> tiposSub = [];
     private string nuevaSub = "";
+    private string nuevaSubCodigo = "";
+    private string subCodigo = "";
 
     protected override async Task OnInitializedAsync() => await CargarAsync();
 
@@ -311,9 +344,19 @@ else
 
     private async Task CrearSubAsync()
     {
-        if (await EjecutarAsync(a => Catalogo.CrearSubAreaAsync(a, seleccionada!.Id, nuevaSub), "Subárea creada."))
+        if (await EjecutarAsync(a => Catalogo.CrearSubAreaAsync(a, seleccionada!.Id, nuevaSubCodigo, nuevaSub), "Subárea creada."))
         {
-            nuevaSub = "";
+            nuevaSub = nuevaSubCodigo = "";
+            await CargarAsync();
+        }
+    }
+
+    private async Task AsignarCodigoSubAsync()
+    {
+        var id = subSeleccionada!.Id;
+        if (await EjecutarAsync(a => Catalogo.AsignarCodigoSubAreaAsync(a, id, subCodigo), "Abreviatura asignada."))
+        {
+            subCodigo = "";
             await CargarAsync();
         }
     }

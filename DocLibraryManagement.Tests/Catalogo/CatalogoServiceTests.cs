@@ -1,3 +1,4 @@
+using DocLibraryManagement.Application.Catalogo;
 using DocLibraryManagement.Application.Comun;
 using DocLibraryManagement.Domain;
 using DocLibraryManagement.Tests.Datos;
@@ -73,18 +74,125 @@ public class CatalogoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDatos
     }
 
     [Fact]
-    public async Task Las_subareas_pertenecen_a_un_area_y_no_se_repiten_en_ella()
+    public async Task Las_subareas_pertenecen_a_un_area_y_ni_el_nombre_ni_la_abreviatura_se_repiten_en_ella()
     {
         using var e = new Escenario(bd);
         var admin = await e.NuevoAdminAsync();
-        var (areaId, _, _, _) = await e.NuevaAreaConTipoAsync(admin);
+        var areaId = await e.Catalogo.CrearAreaAsync(admin, Escenario.CodigoUnico("A"), "Área");
 
-        var subId = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "Línea 1");
+        var subId = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "l1", "Línea 1");
 
-        await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Catalogo.CrearSubAreaAsync(admin, areaId, "Línea 1"));
+        await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Catalogo.CrearSubAreaAsync(admin, areaId, "L9", "Línea 1"));   // mismo nombre
+        await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Catalogo.CrearSubAreaAsync(admin, areaId, "L1", "Otra línea")); // misma abreviatura
         var area = Assert.Single(await e.Catalogo.ListarAreasAsync(), a => a.Id == areaId);
-        Assert.Equal(subId, Assert.Single(area.SubAreas).Id);
+        var sub = Assert.Single(area.SubAreas);
+        Assert.Equal(subId, sub.Id);
+        Assert.Equal("L1", sub.Codigo);                                       // se normaliza a mayúsculas
         Assert.Single(await e.AuditoriaDeAsync(subId.ToString()));
+    }
+
+    [Fact]
+    public async Task La_misma_abreviatura_de_subarea_si_puede_existir_en_otra_area()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var area1 = await e.Catalogo.CrearAreaAsync(admin, Escenario.CodigoUnico("A"), "Área 1");
+        var area2 = await e.Catalogo.CrearAreaAsync(admin, Escenario.CodigoUnico("A"), "Área 2");
+
+        await e.Catalogo.CrearSubAreaAsync(admin, area1, "SIP", "Shipping");
+        await e.Catalogo.CrearSubAreaAsync(admin, area2, "SIP", "Shipments"); // QA-SIP y MT-SIP del estándar de Calidad
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("A")]                 // una sola letra no basta para una unidad
+    [InlineData("TIENE ESPACIO")]
+    [InlineData("MUYLARGOCODIGO")]
+    [InlineData("A-B")]
+    public async Task La_abreviatura_de_la_subarea_se_valida(string codigo)
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var areaId = await e.Catalogo.CrearAreaAsync(admin, Escenario.CodigoUnico("A"), "Área");
+
+        await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Catalogo.CrearSubAreaAsync(admin, areaId, codigo, "Subárea"));
+    }
+
+    [Fact]
+    public async Task Solo_el_administrador_crea_subareas()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var areaId = await e.Catalogo.CrearAreaAsync(admin, Escenario.CodigoUnico("A"), "Área");
+        var autor = await e.NuevoAutorAsync();
+
+        await Assert.ThrowsAsync<AccesoDenegadoException>(() => e.Catalogo.CrearSubAreaAsync(autor, areaId, "XX", "Subárea"));
+        await Assert.ThrowsAsync<AccesoDenegadoException>(() => e.Catalogo.AsignarCodigoSubAreaAsync(autor, 1, "XX"));
+    }
+
+    [Fact]
+    public async Task Una_subarea_anterior_al_estandar_recibe_su_abreviatura_una_sola_vez()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var areaId = await e.Catalogo.CrearAreaAsync(admin, Escenario.CodigoUnico("A"), "Área");
+        int subId;
+        await using (var db = e.Db())
+        {
+            var sub = new SubArea { AreaId = areaId, Nombre = "Anterior" }; // como las que ya existían sin abreviatura
+            db.SubAreas.Add(sub);
+            await db.SaveChangesAsync();
+            subId = sub.Id;
+        }
+
+        await e.Catalogo.AsignarCodigoSubAreaAsync(admin, subId, "ant");
+
+        var area = Assert.Single(await e.Catalogo.ListarAreasAsync(), a => a.Id == areaId);
+        Assert.Equal("ANT", Assert.Single(area.SubAreas).Codigo);
+        await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Catalogo.AsignarCodigoSubAreaAsync(admin, subId, "OTRA")); // ya no cambia
+        Assert.Contains(await e.AuditoriaDeAsync(subId.ToString()), a => a.Accion == "SubArea.AsignarCodigo");
+    }
+
+    [Fact]
+    public async Task No_se_puede_asignar_una_abreviatura_que_ya_usa_otra_subarea_del_area()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var areaId = await e.Catalogo.CrearAreaAsync(admin, Escenario.CodigoUnico("A"), "Área");
+        await e.Catalogo.CrearSubAreaAsync(admin, areaId, "USO", "En uso");
+        int subId;
+        await using (var db = e.Db())
+        {
+            var sub = new SubArea { AreaId = areaId, Nombre = "Anterior" };
+            db.SubAreas.Add(sub);
+            await db.SaveChangesAsync();
+            subId = sub.Id;
+        }
+
+        await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Catalogo.AsignarCodigoSubAreaAsync(admin, subId, "USO"));
+    }
+
+    [Theory]
+    [InlineData("P")]
+    [InlineData("F")]
+    [InlineData("R")]
+    [InlineData("DESV")]
+    public async Task Los_tipos_pueden_tener_abreviatura_de_una_letra_como_en_el_estandar_de_calidad(string codigo)
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var codigoUnico = codigo + Escenario.CodigoUnico("")[..3]; // evita chocar con tipos de otras pruebas
+
+        // Las pruebas comparten base: se usa un código distinto, pero se comprueba la regla sobre la forma.
+        Assert.Equal(codigo, ReglasCatalogo.NormalizarCodigo(codigo, "el tipo", ReglasCatalogo.LongitudMinimaCodigoTipo));
+        await e.Catalogo.CrearTipoAsync(admin, codigoUnico, "Tipo", 12);
+    }
+
+    [Fact]
+    public void Las_areas_y_las_subareas_siguen_pidiendo_al_menos_dos_caracteres()
+    {
+        Assert.Throws<ReglaNegocioException>(() => ReglasCatalogo.NormalizarCodigo("P", "el área"));
+        Assert.Throws<ReglaNegocioException>(() => ReglasCatalogo.NormalizarCodigo("", "el tipo", ReglasCatalogo.LongitudMinimaCodigoTipo));
     }
 
     [Fact]
@@ -126,7 +234,7 @@ public class CatalogoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDatos
         var t1 = await e.Catalogo.CrearTipoAsync(admin, Escenario.CodigoUnico("T"), "Uno", 12);
         var t2 = await e.Catalogo.CrearTipoAsync(admin, Escenario.CodigoUnico("T"), "Dos", 12);
         await e.Catalogo.EstablecerTiposDeAreaAsync(admin, areaId, [t1, t2]);
-        var subId = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "Línea");
+        var subId = await e.Catalogo.CrearSubAreaAsync(admin, areaId, "LN", "Línea");
 
         Assert.Equivalent(new[] { t1, t2 }, (await e.Catalogo.TiposDisponiblesAsync(areaId, subId)).Select(t => t.Id));
 

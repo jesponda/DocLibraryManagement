@@ -34,7 +34,7 @@ internal sealed class CatalogoService(IDbContextFactory<AppDbContext> fabrica, T
         return areas.Select(a => new AreaDto(
             a.Id, a.Codigo, a.Nombre, a.Activa,
             a.SubAreas.OrderBy(s => s.Nombre)
-                .Select(s => new SubAreaDto(s.Id, s.AreaId, s.Nombre, s.Activa, s.TiposDocumento.Select(t => t.TipoDocumentoId).ToList()))
+                .Select(s => new SubAreaDto(s.Id, s.AreaId, s.Nombre, s.Activa, s.TiposDocumento.Select(t => t.TipoDocumentoId).ToList(), s.Codigo))
                 .ToList(),
             a.TiposDocumento.Select(t => t.TipoDocumentoId).ToList(),
             a.DuenoId, a.Dueno?.NombreVisible)).ToList();
@@ -151,9 +151,10 @@ internal sealed class CatalogoService(IDbContextFactory<AppDbContext> fabrica, T
 
     // ---------- Subáreas ----------
 
-    public async Task<int> CrearSubAreaAsync(Actor actor, int areaId, string nombre, CancellationToken ct = default)
+    public async Task<int> CrearSubAreaAsync(Actor actor, int areaId, string codigo, string nombre, CancellationToken ct = default)
     {
         ExigirAdministrador(actor);
+        var cod = ReglasCatalogo.NormalizarCodigo(codigo, "la subárea");
         var nom = ReglasCatalogo.NormalizarNombre(nombre, "la subárea");
 
         await using var db = await fabrica.CreateDbContextAsync(ct);
@@ -165,17 +166,48 @@ internal sealed class CatalogoService(IDbContextFactory<AppDbContext> fabrica, T
             throw new ReglaNegocioException($"El área {area.Codigo} ya tiene una subárea llamada «{nom}».");
         }
 
-        var sub = new SubArea { AreaId = areaId, Nombre = nom };
+        if (await db.SubAreas.AnyAsync(s => s.AreaId == areaId && s.Codigo == cod, ct))
+        {
+            throw new ReglaNegocioException($"El área {area.Codigo} ya tiene una subárea con la abreviatura {cod}.");
+        }
+
+        var sub = new SubArea { AreaId = areaId, Codigo = cod, Nombre = nom };
         db.SubAreas.Add(sub);
 
         // El Id de la subárea se conoce hasta guardar: ambos pasos van en una sola transacción.
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        await GuardarAsync(db, $"El área {area.Codigo} ya tiene una subárea llamada «{nom}».", ct);
+        await GuardarAsync(db, $"El área {area.Codigo} ya tiene una subárea llamada «{nom}» o con la abreviatura {cod}.", ct);
         Bitacora.Registrar(db, reloj, actor, "SubArea.Crear", nameof(SubArea), sub.Id.ToString(),
-            nuevo: $"Area={area.Codigo}; Nombre={nom}");
+            nuevo: $"Area={area.Codigo}; Codigo={cod}; Nombre={nom}");
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return sub.Id;
+    }
+
+    public async Task AsignarCodigoSubAreaAsync(Actor actor, int subAreaId, string codigo, CancellationToken ct = default)
+    {
+        ExigirAdministrador(actor);
+        var cod = ReglasCatalogo.NormalizarCodigo(codigo, "la subárea");
+
+        await using var db = await fabrica.CreateDbContextAsync(ct);
+        var sub = await db.SubAreas.Include(s => s.Area).FirstOrDefaultAsync(s => s.Id == subAreaId, ct)
+            ?? throw new ReglaNegocioException("La subárea no existe.");
+
+        if (sub.Codigo is not null)
+        {
+            throw new ReglaNegocioException($"La subárea ya tiene la abreviatura {sub.Codigo}: no se puede cambiar porque forma parte del código de sus documentos.");
+        }
+
+        if (await db.SubAreas.AnyAsync(s => s.AreaId == sub.AreaId && s.Codigo == cod, ct))
+        {
+            throw new ReglaNegocioException($"El área {sub.Area!.Codigo} ya tiene una subárea con la abreviatura {cod}.");
+        }
+
+        sub.Codigo = cod;
+        Bitacora.Registrar(db, reloj, actor, "SubArea.AsignarCodigo", nameof(SubArea), sub.Id.ToString(),
+            anterior: "(sin abreviatura)", nuevo: $"Area={sub.Area!.Codigo}; Codigo={cod}");
+
+        await GuardarAsync(db, $"El área {sub.Area.Codigo} ya tiene una subárea con la abreviatura {cod}.", ct);
     }
 
     public async Task ActualizarSubAreaAsync(Actor actor, int subAreaId, string nombre, bool activa, CancellationToken ct = default)
@@ -206,7 +238,7 @@ internal sealed class CatalogoService(IDbContextFactory<AppDbContext> fabrica, T
     public async Task<int> CrearTipoAsync(Actor actor, string codigo, string nombre, int mesesRevision, CancellationToken ct = default)
     {
         ExigirAdministrador(actor);
-        var cod = ReglasCatalogo.NormalizarCodigo(codigo, "el tipo de documento");
+        var cod = ReglasCatalogo.NormalizarCodigo(codigo, "el tipo de documento", ReglasCatalogo.LongitudMinimaCodigoTipo);
         var nom = ReglasCatalogo.NormalizarNombre(nombre, "el tipo de documento");
         ValidarMeses(mesesRevision);
 

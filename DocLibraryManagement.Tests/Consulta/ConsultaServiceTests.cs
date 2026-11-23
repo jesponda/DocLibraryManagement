@@ -91,7 +91,7 @@ public class ConsultaServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDatos
         var otroTipo = await e.Catalogo.CrearTipoAsync(f.Admin, Escenario.CodigoUnico("T"), "Otro tipo", 12);
         await e.Catalogo.EstablecerTiposDeAreaAsync(f.Admin, f.AreaId, [f.TipoId, otroTipo]);
         await e.Flujo.GuardarPlantillaAsync(f.Admin, otroTipo, [new(1, TipoPaso.Aprobacion, "Aprobación")]);
-        var sub = await e.Catalogo.CrearSubAreaAsync(f.Admin, f.AreaId, "Línea 1");
+        var sub = await e.Catalogo.CrearSubAreaAsync(f.Admin, f.AreaId, "L1", "Línea 1");
         await e.PublicarPrimeraAsync(f);                                                           // tipo original, sin subárea
         var otro = await e.Documentos.CrearAsync(f.Autor, new("Del otro tipo", f.AreaId, sub, otroTipo));
         await e.SubirPdfAsync(f.Autor, otro.Revisiones.Single().Id, "otro");

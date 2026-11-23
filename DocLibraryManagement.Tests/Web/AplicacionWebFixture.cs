@@ -129,6 +129,7 @@ public sealed class AplicacionWebFixture : WebApplicationFactory<Program>, IAsyn
         var catalogo = sp.GetRequiredService<ICatalogoService>();
         var areaId = await catalogo.CrearAreaAsync(admin, "CAL", "Calidad");
         AreaId = areaId;
+        await catalogo.CrearSubAreaAsync(admin, areaId, "GEN", "Unidad general"); // la unidad forma parte del código del documento
         var tipoId = await catalogo.CrearTipoAsync(admin, "PRO", "Procedimiento", 12);
         await catalogo.EstablecerTiposDeAreaAsync(admin, areaId, [tipoId]);
         // El aprobador es también dueño del área (aprueba las revisiones menores).

@@ -3,6 +3,10 @@ using DocLibraryManagement.Domain;
 
 namespace DocLibraryManagement.Application.Documentos;
 
+/// <param name="SubAreaId">
+/// La unidad del documento (forma parte del código). Puede omitirse solo si el área tiene una única subárea activa con
+/// abreviatura: entonces se usa esa.
+/// </param>
 public sealed record NuevoDocumento(string Titulo, int AreaId, int? SubAreaId, int TipoDocumentoId);
 
 public sealed record DocumentoResumenDto(
@@ -55,7 +59,10 @@ public interface IDocumentoService
 
     Task<DocumentoDetalleDto?> ObtenerAsync(Actor actor, int documentoId, CancellationToken ct = default);
 
-    /// <summary>Cambia la subárea (clasificación). El área no se puede cambiar: forma parte del código.</summary>
+    /// <summary>
+    /// Asigna la subárea a un documento anterior al estándar de código, que no tiene unidad. En los documentos nuevos la subárea
+    /// (unidad) forma parte del código desde que se crean y <b>no se puede cambiar</b>, igual que el área.
+    /// </summary>
     Task CambiarSubAreaAsync(Actor actor, int documentoId, int? subAreaId, CancellationToken ct = default);
 
     /// <summary>

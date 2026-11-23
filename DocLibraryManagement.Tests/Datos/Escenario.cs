@@ -78,6 +78,13 @@ public sealed class Escenario : IDisposable
         _scope = _sp.CreateScope();
     }
 
+    /// <summary>Abreviatura de la unidad (subárea) que se crea en cada área de prueba.</summary>
+    public const string UnidadPorOmision = "GEN";
+
+    /// <summary>Código que recibe el primer documento de un tipo en un área de prueba: <c>QRT-TIPO-ÁREA-GEN-001</c>.</summary>
+    public static string CodigoEsperado(string codigoTipo, string codigoArea, int consecutivo = 1) =>
+        $"QRT-{codigoTipo}-{codigoArea}-{UnidadPorOmision}-{consecutivo:000}";
+
     public BaseDatosFixture Bd { get; }
 
     public FakeTimeProvider Reloj { get; }
@@ -276,6 +283,10 @@ public sealed class Escenario : IDisposable
         var areaId = await Catalogo.CrearAreaAsync(admin, codigoArea, $"Área {codigoArea}");
         var tipoId = await Catalogo.CrearTipoAsync(admin, codigoTipo, $"Tipo {codigoTipo}", 12);
         await Catalogo.EstablecerTiposDeAreaAsync(admin, areaId, [tipoId]);
+
+        // El código del documento lleva la unidad (subárea): cada área de prueba trae una. Con una sola unidad activa, los
+        // documentos que no indican subárea usan esa.
+        await Catalogo.CrearSubAreaAsync(admin, areaId, UnidadPorOmision, "Unidad general");
         return (areaId, codigoArea, tipoId, codigoTipo);
     }
 

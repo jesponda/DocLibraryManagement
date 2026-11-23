@@ -1,17 +1,20 @@
+using DocLibraryManagement.Application.Catalogo;
 using DocLibraryManagement.Application.Comun;
+using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Application.Documentos;
 using DocLibraryManagement.Domain;
-using DocLibraryManagement.Application.Correo;
 using DocLibraryManagement.Infrastructure.Catalogo;
 using DocLibraryManagement.Infrastructure.Correo;
 using DocLibraryManagement.Infrastructure.Persistencia;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace DocLibraryManagement.Infrastructure.Documentos;
 
 internal sealed class DocumentoService(
     IDbContextFactory<AppDbContext> fabrica,
     IEncoladorNotificaciones notificador,
+    IOptions<DocumentosOptions> opciones,
     TimeProvider reloj) : IDocumentoService
 {
     private const int MaximoTitulo = 300;
@@ -53,21 +56,9 @@ internal sealed class DocumentoService(
                 throw new ReglaNegocioException($"El área {area.Codigo} está desactivada y no admite documentos nuevos.");
             }
 
-            if (nuevo.SubAreaId is { } subId)
-            {
-                var sub = await db.SubAreas.AsNoTracking().FirstOrDefaultAsync(s => s.Id == subId, ct);
-                if (sub is null || sub.AreaId != area.Id)
-                {
-                    throw new ReglaNegocioException("La subárea no pertenece al área indicada.");
-                }
+            var sub = await ResolverUnidadAsync(db, area, nuevo.SubAreaId, ct);
 
-                if (!sub.Activa)
-                {
-                    throw new ReglaNegocioException("La subárea está desactivada y no admite documentos nuevos.");
-                }
-            }
-
-            var disponibles = await CatalogoService.TiposDisponiblesAsync(db, area.Id, nuevo.SubAreaId, ct);
+            var disponibles = await CatalogoService.TiposDisponiblesAsync(db, area.Id, sub.Id, ct);
             var tipo = disponibles.FirstOrDefault(t => t.Id == nuevo.TipoDocumentoId)
                 ?? throw new ReglaNegocioException(
                     "Ese tipo de documento no está habilitado para el área o subárea elegida, o está desactivado.");
@@ -75,17 +66,18 @@ internal sealed class DocumentoService(
             var usuario = await db.Usuarios.AsNoTracking().FirstOrDefaultAsync(u => u.Identificador == actor.Identificador, ct)
                 ?? throw new ReglaNegocioException("Tu usuario aún no está registrado. Cierra sesión y vuelve a entrar.");
 
+            // El consecutivo es por tipo, área y unidad (estándar de código de Calidad) y nunca se reutiliza.
             var consecutivo = (await db.Documentos
-                .Where(d => d.TipoDocumentoId == tipo.Id && d.AreaId == area.Id)
+                .Where(d => d.TipoDocumentoId == tipo.Id && d.AreaId == area.Id && d.SubAreaId == sub.Id)
                 .MaxAsync(d => (int?)d.Consecutivo, ct) ?? 0) + 1;
 
             var ahora = reloj.GetUtcNow().UtcDateTime;
             var documento = new Documento
             {
-                Codigo = Documento.ConstruirCodigo(tipo.Codigo, area.Codigo, consecutivo),
+                Codigo = Documento.ConstruirCodigo(Sitio(), tipo.Codigo, area.Codigo, sub.Codigo!, consecutivo),
                 Titulo = titulo,
                 AreaId = area.Id,
-                SubAreaId = nuevo.SubAreaId,
+                SubAreaId = sub.Id,
                 TipoDocumentoId = tipo.Id,
                 Consecutivo = consecutivo,
                 ResponsableId = usuario.Id,
@@ -106,7 +98,7 @@ internal sealed class DocumentoService(
 
             db.Documentos.Add(documento);
             Bitacora.Registrar(db, reloj, actor, "Documento.Crear", nameof(Documento), documento.Codigo,
-                nuevo: $"Titulo={titulo}; Area={area.Codigo}; Tipo={tipo.Codigo}; Rev.00 Borrador");
+                nuevo: $"Titulo={titulo}; Area={area.Codigo}; Unidad={sub.Codigo}; Tipo={tipo.Codigo}; Rev.00 Borrador");
 
             try
             {
@@ -126,6 +118,65 @@ internal sealed class DocumentoService(
 
             return (await ObtenerInternoAsync(db, documento.Id, ct))!;
         }
+    }
+
+    /// <summary>Código del sitio normalizado (primer segmento del código); vacío = sin prefijo. Una configuración inválida se dice clara.</summary>
+    private string? Sitio()
+    {
+        var configurado = opciones.Value.CodigoSitio;
+        if (string.IsNullOrWhiteSpace(configurado))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ReglasCatalogo.NormalizarCodigo(configurado, "el sitio", ReglasCatalogo.LongitudMinimaCodigoTipo);
+        }
+        catch (ReglaNegocioException)
+        {
+            throw new InvalidOperationException(
+                $"La opción 'Documentos:CodigoSitio' («{configurado}») no es válida: use de 1 a {ReglasCatalogo.LongitudMaximaCodigo} letras o números, o déjela vacía.");
+        }
+    }
+
+    /// <summary>
+    /// La unidad del documento (su subárea). Es obligatoria porque forma parte del código. Si el área tiene una sola unidad
+    /// activa se usa esa; si tiene varias hay que elegir; si no tiene, hay que crearla antes.
+    /// </summary>
+    private static async Task<SubArea> ResolverUnidadAsync(AppDbContext db, Area area, int? subAreaId, CancellationToken ct)
+    {
+        if (subAreaId is { } id)
+        {
+            var elegida = await db.SubAreas.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (elegida is null || elegida.AreaId != area.Id)
+            {
+                throw new ReglaNegocioException("La subárea no pertenece al área indicada.");
+            }
+
+            if (!elegida.Activa)
+            {
+                throw new ReglaNegocioException("La subárea está desactivada y no admite documentos nuevos.");
+            }
+
+            return elegida.Codigo is null
+                ? throw new ReglaNegocioException(
+                    $"La subárea «{elegida.Nombre}» no tiene abreviatura, así que no puede formar parte del código. Un Administrador debe asignársela.")
+                : elegida;
+        }
+
+        var unidades = await db.SubAreas.AsNoTracking()
+            .Where(s => s.AreaId == area.Id && s.Activa && s.Codigo != null)
+            .OrderBy(s => s.Nombre)
+            .ToListAsync(ct);
+
+        return unidades.Count switch
+        {
+            1 => unidades[0],
+            0 => throw new ReglaNegocioException(
+                $"El área {area.Codigo} no tiene subáreas (unidades) activas con abreviatura: el código del documento las necesita. Pide a un Administrador que las cree."),
+            _ => throw new ReglaNegocioException("Elige la subárea (unidad) del documento: forma parte de su código y no se puede cambiar después."),
+        };
     }
 
     public async Task<IReadOnlyList<DocumentoResumenDto>> ListarGestionablesAsync(Actor actor, CancellationToken ct = default)
@@ -196,7 +247,20 @@ internal sealed class DocumentoService(
             throw new AccesoDenegadoException($"No tienes permiso para modificar documentos del área {documento.Area.Codigo}.");
         }
 
+        // La subárea es la «unidad» del código: una vez asignada no cambia (el código tampoco). Esto solo permite asignarla
+        // a un documento anterior al estándar de código, que no tiene unidad.
+        if (documento.SubAreaId is not null)
+        {
+            throw new ReglaNegocioException(
+                $"La subárea de {documento.Codigo} forma parte de su código: no se puede cambiar. Si está mal clasificado, retíralo y crea uno nuevo.");
+        }
+
         SubArea? nueva = null;
+        if (subAreaId is null)
+        {
+            throw new ReglaNegocioException("Elige la subárea que le corresponde al documento.");
+        }
+
         if (subAreaId is { } id)
         {
             nueva = await db.SubAreas.FirstOrDefaultAsync(s => s.Id == id, ct);
@@ -216,7 +280,16 @@ internal sealed class DocumentoService(
         Bitacora.Registrar(db, reloj, actor, "Documento.CambiarSubArea", nameof(Documento), documento.Codigo,
             anterior, nueva?.Nombre ?? "(sin subárea)");
 
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (Bitacora.EsViolacionUnica(ex))
+        {
+            // El consecutivo de este documento ya lo usa otro de esa unidad (se numeraron por separado).
+            throw new ReglaNegocioException(
+                $"No se puede asignar esa subárea: ya hay un documento del mismo tipo con el consecutivo {documento.Consecutivo:000} en ella.");
+        }
     }
 
     // ---------- Responsable ----------
