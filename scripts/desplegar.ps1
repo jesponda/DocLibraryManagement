@@ -70,13 +70,9 @@ if ($LASTEXITCODE -ne 0) { throw 'La publicacion fallo.' }
 
 # ---------------------------------------------------------------- 2. base de datos
 Paso '2/6 Creando la base de datos (si no existe) y aplicando migraciones'
-# Las herramientas globales viven en %USERPROFILE%\.dotnet\tools, que una ventana ya abierta puede no tener en el PATH.
-$herramientas = Join-Path $env:USERPROFILE '.dotnet\tools'
-if (($env:PATH -split ';') -notcontains $herramientas) { $env:PATH = "$env:PATH;$herramientas" }
-if (-not ((dotnet tool list -g) -match 'dotnet-ef')) {
-    dotnet tool install --global dotnet-ef --version 10.0.14
-    if ($LASTEXITCODE -ne 0) { throw 'No se pudo instalar dotnet-ef.' }
-}
+# El repositorio fija la version de dotnet-ef en dotnet-tools.json (herramienta LOCAL): se restaura aqui, sin depender del PATH.
+dotnet tool restore
+if ($LASTEXITCODE -ne 0) { throw 'No se pudo restaurar dotnet-ef (dotnet tool restore). Revisa la conexion a internet / NuGet.' }
 $env:DOCLIB_CONNECTION = $Conexion
 dotnet ef database update --project DocLibraryManagement.Infrastructure --startup-project DocLibraryManagement.Infrastructure
 if ($LASTEXITCODE -ne 0) { throw 'No se pudieron aplicar las migraciones. Revisa la cadena de conexion y los permisos en SQL Server.' }
