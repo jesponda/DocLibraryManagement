@@ -55,6 +55,12 @@ if ($ocupado -and -not (Get-ScheduledTask -TaskName $NombreTarea -ErrorAction Si
 }
 
 # ---------------------------------------------------------------- 1. detener y publicar
+# Aviso para el vigilante (vigilar.ps1): no debe reiniciar la app mientras se despliega.
+$bloqueo = Join-Path $Destino 'mantenimiento.lock'
+New-Item -ItemType Directory -Force -Path $Destino | Out-Null
+Set-Content -Path $bloqueo -Value (Get-Date)
+trap { Remove-Item $bloqueo -Force -ErrorAction SilentlyContinue; throw $_ }
+
 Paso '1/6 Deteniendo la version anterior (si existe) y publicando'
 $tarea = Get-ScheduledTask -TaskName $NombreTarea -ErrorAction SilentlyContinue
 if ($tarea) { Stop-ScheduledTask -TaskName $NombreTarea -ErrorAction SilentlyContinue }
@@ -164,3 +170,4 @@ if ($linea) {
     Write-Host 'No se creo un administrador nuevo: ya existian cuentas en esta base de datos.'
 }
 Write-Host "Log: $log"
+Remove-Item $bloqueo -Force -ErrorAction SilentlyContinue

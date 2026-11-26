@@ -78,6 +78,14 @@ public static class ReglasCatalogo
     /// </summary>
     public const int LongitudMinimaCodigoTipo = 1;
 
+    /// <summary>
+    /// Abreviatura de la unidad «General» de cada área: donde van los documentos de toda el área que no pertenecen a una
+    /// subárea en particular (código <c>QRT-F-QA-GEN-001</c>). Es una subárea más, con las mismas reglas (inmutable).
+    /// </summary>
+    public const string UnidadGeneral = "GEN";
+
+    public const string NombreUnidadGeneral = "General";
+
     public const int LongitudMaximaCodigo = 10;
 
     /// <summary>Normaliza un código (mayúsculas, sin espacios) y valida que solo tenga letras y dígitos.</summary>

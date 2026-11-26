@@ -44,7 +44,8 @@ La revisión (`Rev.00`, `Rev.01`…) **no** es parte del código. El consecutivo
 5. Inicia el flujo: asigna a quien **revisa** y a quien **aprueba**.
 6. Sigue su avance en **Documentos**. Si lo rechazan, verás el comentario, corriges y lo reenvías.
 
-> La **subárea (unidad) forma parte del código y no se puede cambiar** después. Elígela con cuidado.
+> Si el documento es de toda el área (no de una subárea en particular), deja la opción **«General del área»**, que ya viene preseleccionada: su código lleva `GEN` (por ejemplo `QRT-F-QA-GEN-001`). Si es de una subárea, elígela.
+> La **subárea (unidad) forma parte del código y no se puede cambiar** después, también la General. Elígela con cuidado.
 
 ## 5. Revisar y aprobar
 

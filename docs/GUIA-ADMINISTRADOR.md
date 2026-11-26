@@ -32,6 +32,7 @@ Al dar de alta se muestra la **contraseña temporal una sola vez**. Entrégala p
 
 ## 3. Catálogos — *Administración*
 
+- **Unidad «General» (`GEN`):** cada área la trae; es donde van los documentos de toda el área. No la desactives ni la renombres: los Autores la usan por omisión. En un área que ya existía, aparece al volver a pulsar *Cargar catálogo estándar* (o al correr `scriptstalogo-estandar.sql`).
 - **Áreas y subáreas:** una subárea es la **unidad** del código del documento (código de 2–10 letras/números, único por área, **inmutable**). Una vez usada en documentos, no la renombres a otra cosa distinta.
 - **Tipos de documento:** código (ej. `F`, `PRO`), nombre y meses entre revisiones (12 por omisión). Cada área ofrece solo los tipos que le asocies.
 - **Flujos de aprobación:** pasos de cada tipo (Revisión, Aprobación). La persona concreta se elige al enviar cada documento.
@@ -74,6 +75,20 @@ No toca la base de datos de datos ni los archivos. **Haz un respaldo antes** (se
 Hay **dos cosas** que respaldar, y se restauran juntas:
 1. La **base de datos** (`DocLibraryV2`).
 2. La carpeta de **archivos**: `C:\Apps\DocLibrary-V2\datos\archivos` (los PDF y fuentes).
+
+**Automático (recomendado):** `scripts\programar-tareas.ps1` registra dos tareas del servidor (PowerShell como Administrador):
+
+```powershell
+cd C:\Users\jesponda\source\repos\DocLibraryManagement
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\programar-tareas.ps1 -ProbarRespaldo `
+  -Conexion "Server=localhost\SQLEXPRESS;Database=DocLibraryV2;Trusted_Connection=True;TrustServerCertificate=True"
+```
+- **DocLibrary-Respaldo:** cada día a las 23:30. Respalda y verifica la base, copia los archivos (acumulativo, no borra nada) y conserva 14 días de `.bak` en `C:\Respaldos\DocLibrary`. Bitácora en `respaldos.log`; si falla, la tarea queda con error.
+- **DocLibrary-Vigilante:** cada 5 minutos revisa `http://localhost:8001/health`; si no responde (dos veces, con 20 s de por medio), reinicia la tarea `DocLibrary-V2` y registra en `C:\Apps\DocLibrary-V2\logs\vigilante.log`.
+- **Mantenimiento:** el despliegue avisa al vigilante solo. Si vas a detener la app a mano, crea antes `Set-Content C:\Apps\DocLibrary-V2\mantenimiento.lock x` (el vigilante no actúa durante 45 min) y bórralo al terminar; si no, la volverá a levantar.
+- Si actualizas el repositorio (`git pull`), vuelve a correr `programar-tareas.ps1` para refrescar los scripts copiados.
+
+**A mano** (por ejemplo, un respaldo extra antes de actualizar):
 
 ```powershell
 # Preparación (una vez): carpeta y permiso para el servicio de SQL Server

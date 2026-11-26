@@ -52,6 +52,7 @@ aprobó, cuál es la revisión **vigente**, y garantiza que nadie use una revisi
 - **Usuarios sin Active Directory:** modo de acceso `Local` (usuario y contraseña propios) con módulo *Usuarios y roles* en Administración. Ver [§6.1](#61-autenticación).
 - **Código del documento:** `Documentos:CodigoSitio` (por omisión `QRT`; vacío = sin prefijo). La unidad es la subárea (código de 2–10 caracteres, único por área, inmutable). Los documentos anteriores conservan su código.
 - **Funciones del prototipo** se cargan aplanadas como subáreas («Subárea · Función»). No se adoptaron líneas productivas, alcance, referencias, matriz de aprobación por rol ni Standard Documents.
+- **Documentos generales del área:** cada área trae la unidad «General» (`GEN`); al crear un documento queda preseleccionada, así que no hace falta elegir subárea. Código `QRT-F-QA-GEN-001`, con su propia numeración y la misma regla de código permanente. Al volver a cargar el catálogo estándar se agrega a las áreas que ya existían.
 - **Catálogo estándar:** botón en Administración; solo agrega, nunca modifica ni borra. Datos de demostración opcionales en `scripts/datos-demo-v2.sql`.
 - **Seguridad:** los archivos de `wwwroot` (CSS, JS, logo) se sirven sin sesión; los documentos siguen exigiendo sesión y permiso en `/archivos`.
 - En desarrollo la V2 usa su propia base (`DocLibraryManagement-V2-Dev`).

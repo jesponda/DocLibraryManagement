@@ -1,9 +1,9 @@
 ﻿-- Catalogo del SGD: areas, subareas (unidades), tipos de documento, asociaciones y flujos de aprobacion.
--- Generado el 2026-11-24 desde una base de desarrollo. SIN documentos, usuarios ni bitacora.
+-- Generado el 2026-11-26 desde una base de desarrollo. SIN documentos, usuarios ni bitacora.
 --
 -- IDEMPOTENTE: solo agrega lo que falte (por codigo); no modifica ni borra nada existente. Se puede correr varias veces.
 -- No asigna duenos de area (dependen de usuarios): se eligen desde Administracion.
--- Resumen: 9 areas, 66 subareas, 20 tipos, 169 asociaciones area-tipo, 19 subarea-tipo, 40 pasos de flujo.
+-- Resumen: 9 areas, 75 subareas, 20 tipos, 180 asociaciones area-tipo, 19 subarea-tipo, 40 pasos de flujo.
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
@@ -109,6 +109,15 @@ INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'TRN', N'Cap
 INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'REG', N'Control de registros y retención', 1 FROM Areas a WHERE a.Codigo = N'SGD' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'REG');
 INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'RSK', N'Riesgos y mejora continua', 1 FROM Areas a WHERE a.Codigo = N'SGD' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'RSK');
 INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'NCM', N'Contención y no conformidades', 1 FROM Areas a WHERE a.Codigo = N'SGD' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'NCM');
+INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'GEN', N'General', 1 FROM Areas a WHERE a.Codigo = N'QA' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'GEN');
+INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'GEN', N'General', 1 FROM Areas a WHERE a.Codigo = N'PR' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'GEN');
+INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'GEN', N'General', 1 FROM Areas a WHERE a.Codigo = N'ENG' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'GEN');
+INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'GEN', N'General', 1 FROM Areas a WHERE a.Codigo = N'MT' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'GEN');
+INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'GEN', N'General', 1 FROM Areas a WHERE a.Codigo = N'IT' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'GEN');
+INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'GEN', N'General', 1 FROM Areas a WHERE a.Codigo = N'FN' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'GEN');
+INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'GEN', N'General', 1 FROM Areas a WHERE a.Codigo = N'HR' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'GEN');
+INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'GEN', N'General', 1 FROM Areas a WHERE a.Codigo = N'EHS' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'GEN');
+INSERT INTO SubAreas (AreaId, Codigo, Nombre, Activa) SELECT a.Id, N'GEN', N'General', 1 FROM Areas a WHERE a.Codigo = N'SGD' AND NOT EXISTS (SELECT 1 FROM SubAreas s WHERE s.AreaId = a.Id AND s.Codigo = N'GEN');
 
 -- Tipos que ofrece cada area
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'QA' AND t.Codigo = N'P' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
@@ -194,12 +203,23 @@ INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'P' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'F' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'DP' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'CP' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'AE' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'JSA' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'PFEP' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'LOTO' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'PO' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'MC' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'AV' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'HTE' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'AC' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'PI' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'CHL' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'DF' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'PFM' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'PC' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'R' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
+INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'IT' AND t.Codigo = N'DESV' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'FN' AND t.Codigo = N'P' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'FN' AND t.Codigo = N'F' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);
 INSERT INTO AreasTiposDocumento (AreaId, TipoDocumentoId) SELECT a.Id, t.Id FROM Areas a, TiposDocumento t WHERE a.Codigo = N'FN' AND t.Codigo = N'DP' AND NOT EXISTS (SELECT 1 FROM AreasTiposDocumento x WHERE x.AreaId = a.Id AND x.TipoDocumentoId = t.Id);

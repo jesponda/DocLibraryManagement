@@ -33,8 +33,19 @@ public class CatalogoEstandarDatosTests
         var porArea = CatalogoEstandar.Areas.ToDictionary(a => a.Codigo, a => a.Unidades.Count);
 
         Assert.Equal(
-            new Dictionary<string, int> { ["QA"] = 14, ["PR"] = 11, ["ENG"] = 3, ["MT"] = 6, ["IT"] = 6, ["FN"] = 6, ["HR"] = 6, ["EHS"] = 4, ["SGD"] = 10 },
+            new Dictionary<string, int> { ["QA"] = 15, ["PR"] = 12, ["ENG"] = 4, ["MT"] = 7, ["IT"] = 7, ["FN"] = 7, ["HR"] = 7, ["EHS"] = 5, ["SGD"] = 11 },
             porArea);
+    }
+
+    [Fact]
+    public void Cada_area_trae_su_unidad_General_GEN_primero_para_los_documentos_de_toda_el_area()
+    {
+        foreach (var area in CatalogoEstandar.Areas)
+        {
+            var primera = area.Unidades[0];
+            Assert.Equal((ReglasCatalogo.UnidadGeneral, ReglasCatalogo.NombreUnidadGeneral), (primera.Codigo, primera.Nombre));
+            Assert.Single(area.Unidades, u => u.Codigo == ReglasCatalogo.UnidadGeneral);
+        }
     }
 
     [Fact]
@@ -127,7 +138,7 @@ public class CatalogoEstandarCargaTests
             var asociaciones = CatalogoEstandar.Areas.Count * CatalogoEstandar.Tipos.Count
                                + CatalogoEstandar.Tipos.Count - CatalogoEstandar.TiposNoAplicables[("QA", "MET")].Count; // las unidades propias de Metrología
             Assert.Equal(new ResultadoCargaCatalogo(9, unidades, 20, asociaciones, 20), r);
-            Assert.Equal(66, unidades);
+            Assert.Equal(75, unidades);   // 66 del estándar + la unidad «General» (GEN) de cada una de las 9 áreas
             Assert.False(r.SinCambios);
 
             var areas = await e.Catalogo.ListarAreasAsync();
@@ -224,7 +235,7 @@ public class CatalogoEstandarCargaTests
 
             var qa = (await e.Catalogo.ListarAreasAsync(incluirInactivas: true)).Single(a => a.Codigo == "QA");
             Assert.Equal((areaQa, "Calidad de planta", false), (qa.Id, qa.Nombre, qa.Activa));   // sigue como la dejó el Administrador
-            Assert.Equal(14, qa.SubAreas.Count);                                                     // pero se le completaron las unidades
+            Assert.Equal(15, qa.SubAreas.Count);                                                     // pero se le completaron las unidades
             var p = (await e.Catalogo.ListarTiposAsync()).Single(t => t.Codigo == "P");
             Assert.Equal((tipoP, "Mi procedimiento", 24), (p.Id, p.Nombre, p.MesesRevision));
             Assert.Equal(8, r.AreasNuevas);                                                          // QA ya existía
@@ -254,7 +265,7 @@ public class CatalogoEstandarCargaTests
             var qa = (await e.Catalogo.ListarAreasAsync()).Single(a => a.Codigo == "QA");
             var met = Assert.Single(qa.SubAreas, s => s.Nombre == "Metrología");
             Assert.Equal("MET", met.Codigo);
-            Assert.Equal(14, qa.SubAreas.Count);
+            Assert.Equal(15, qa.SubAreas.Count);
         }
         finally
         {

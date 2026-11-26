@@ -47,7 +47,7 @@ public static class CatalogoEstandar
         new("R", "Registros"), new("DESV", "Desviaciones"),
     ];
 
-    public static readonly IReadOnlyList<AreaEstandar> Areas =
+    private static readonly IReadOnlyList<AreaEstandar> AreasDeCalidad =
     [
         new("QA", "Quality",
         [
@@ -86,6 +86,13 @@ public static class CatalogoEstandar
             U("RSK", "Riesgos y mejora continua"), U("NCM", "Contención y no conformidades"),
         ]),
     ];
+
+    /// <summary>
+    /// Las áreas del estándar. Cada una empieza con su unidad «General» (<see cref="ReglasCatalogo.UnidadGeneral"/>): ahí van los
+    /// documentos de toda el área que no son de una subárea en particular, sin tener que elegir ninguna.
+    /// </summary>
+    public static readonly IReadOnlyList<AreaEstandar> Areas =
+        [.. AreasDeCalidad.Select(a => a with { Unidades = [U(ReglasCatalogo.UnidadGeneral, ReglasCatalogo.NombreUnidadGeneral), .. a.Unidades] })];
 
     /// <summary>
     /// Tipos que no aplican en una unidad (la matriz de Calidad dice que el Plan de Inspección «no aplica» en Metrología).

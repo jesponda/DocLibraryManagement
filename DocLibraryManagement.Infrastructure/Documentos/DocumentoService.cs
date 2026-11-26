@@ -170,12 +170,18 @@ internal sealed class DocumentoService(
             .OrderBy(s => s.Nombre)
             .ToListAsync(ct);
 
+        // Sin subárea elegida: un documento de toda el área va a su unidad «General» (GEN), si la tiene.
+        var general = unidades.FirstOrDefault(s => string.Equals(s.Codigo, ReglasCatalogo.UnidadGeneral, StringComparison.OrdinalIgnoreCase));
+
         return unidades.Count switch
         {
             1 => unidades[0],
             0 => throw new ReglaNegocioException(
                 $"El área {area.Codigo} no tiene subáreas (unidades) activas con abreviatura: el código del documento las necesita. Pide a un Administrador que las cree."),
-            _ => throw new ReglaNegocioException("Elige la subárea (unidad) del documento: forma parte de su código y no se puede cambiar después."),
+            _ when general is not null => general,
+            _ => throw new ReglaNegocioException(
+                "Elige la subárea (unidad) del documento: forma parte de su código y no se puede cambiar después. " +
+                $"Para documentos de toda el área, un Administrador puede crear la unidad «{ReglasCatalogo.NombreUnidadGeneral}» ({ReglasCatalogo.UnidadGeneral})."),
         };
     }
 

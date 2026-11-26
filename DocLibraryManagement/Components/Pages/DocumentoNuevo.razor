@@ -62,9 +62,10 @@ else
                             }
                             @foreach (var s in unidades)
                             {
-                                <option value="@s.Id">@s.Nombre (@s.Codigo)</option>
+                                <option value="@s.Id">@(EsGeneral(s) ? $"General del área, sin subárea específica ({s.Codigo})" : $"{s.Nombre} ({s.Codigo})")</option>
                             }
                         </select>
+                        <div class="form-text">Para un documento de todo el área, deja «General del área». Si es de una subárea en particular, elígela.</div>
                     </div>
                 }
 
@@ -128,6 +129,9 @@ else
     /// <summary>Las unidades que admiten documentos: activas y con abreviatura.</summary>
     private IReadOnlyList<SubAreaDto> unidades = [];
 
+    private static bool EsGeneral(SubAreaDto s) =>
+        string.Equals(s.Codigo, ReglasCatalogo.UnidadGeneral, StringComparison.OrdinalIgnoreCase);
+
     private string VistaPreviaCodigo
     {
         get
@@ -146,8 +150,11 @@ else
         areaActual = areas!.FirstOrDefault(a => a.Id == areaId);
         unidades = [.. (areaActual?.SubAreas ?? []).Where(s => s.Activa && s.Codigo is not null)];
 
-        // Con una sola unidad no hay nada que elegir: queda seleccionada.
-        subAreaId = unidades.Count == 1 ? unidades[0].Id : 0;
+        // Con una sola unidad no hay nada que elegir. Si no, queda preseleccionada la «General» del área (documentos que no son
+        // de una subárea en particular); la persona puede cambiarla por la subárea que corresponda.
+        subAreaId = unidades.Count == 1
+            ? unidades[0].Id
+            : unidades.FirstOrDefault(s => string.Equals(s.Codigo, ReglasCatalogo.UnidadGeneral, StringComparison.OrdinalIgnoreCase))?.Id ?? 0;
         tipoId = 0;
         await CargarTiposAsync();
     }

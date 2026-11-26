@@ -395,17 +395,42 @@ public class DocumentoServiceTests(BaseDatosFixture bd) : IClassFixture<BaseDato
     }
 
     [Fact]
-    public async Task Con_varias_unidades_hay_que_elegir_una()
+    public async Task Con_varias_unidades_y_sin_General_hay_que_elegir_una()
     {
         using var e = new Escenario(bd);
         var admin = await e.NuevoAdminAsync();
-        var (areaId, codigoArea, tipoId, _) = await e.NuevaAreaConTipoAsync(admin);
-        var autor = await e.NuevoAutorAsync(codigoArea);
+        var codigoArea = Escenario.CodigoUnico("A");
+        var areaId = await e.Catalogo.CrearAreaAsync(admin, codigoArea, $"Área {codigoArea}");
+        await e.Catalogo.CrearSubAreaAsync(admin, areaId, "L1", "Línea 1");
         await e.Catalogo.CrearSubAreaAsync(admin, areaId, "L2", "Línea 2");
+        var tipoId = await e.Catalogo.CrearTipoAsync(admin, Escenario.CodigoUnico("T"), "Tipo", 12);
+        await e.Catalogo.EstablecerTiposDeAreaAsync(admin, areaId, [tipoId]);
+        var autor = await e.NuevoAutorAsync(codigoArea);
 
         var ex = await Assert.ThrowsAsync<ReglaNegocioException>(() => e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId)));
 
         Assert.Contains("Elige la subárea", ex.Message);
+        Assert.Contains("General", ex.Message); // y le dice al Administrador cómo habilitar los documentos de toda el área
+    }
+
+    [Fact]
+    public async Task Sin_elegir_subarea_un_documento_del_area_va_a_su_unidad_General()
+    {
+        using var e = new Escenario(bd);
+        var admin = await e.NuevoAdminAsync();
+        var (areaId, codigoArea, tipoId, codigoTipo) = await e.NuevaAreaConTipoAsync(admin);   // ya tiene la unidad GEN
+        var autor = await e.NuevoAutorAsync(codigoArea);
+        await e.Catalogo.CrearSubAreaAsync(admin, areaId, "L2", "Línea 2");
+
+        var general = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId));              // sin subárea
+        var deLinea = await e.Documentos.CrearAsync(autor, new NuevoDocumento("De la línea 2", areaId,
+            (await e.Catalogo.ListarAreasAsync()).Single(a => a.Id == areaId).SubAreas.Single(s => s.Codigo == "L2").Id, tipoId));
+        var otroGeneral = await e.Documentos.CrearAsync(autor, Nuevo(areaId, tipoId));
+
+        Assert.Equal(Escenario.CodigoEsperado(codigoTipo, codigoArea, 1), general.Codigo);       // QRT-TIPO-ÁREA-GEN-001
+        Assert.Equal($"QRT-{codigoTipo}-{codigoArea}-L2-001", deLinea.Codigo);                   // su propia numeración
+        Assert.Equal(Escenario.CodigoEsperado(codigoTipo, codigoArea, 2), otroGeneral.Codigo);   // GEN sigue contando
+        Assert.NotNull(general.SubAreaId);
     }
 
     [Fact]

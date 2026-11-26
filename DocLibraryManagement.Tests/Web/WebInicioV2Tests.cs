@@ -178,7 +178,7 @@ public class WebInicioV2Tests(AplicacionWebFixture app) : IClassFixture<Aplicaci
 
         Assert.Contains("Catálogo estándar de Calidad", texto);
         Assert.Contains("9 áreas", texto);
-        Assert.Contains("66 subáreas (unidades)", texto);
+        Assert.Contains("75 subáreas (unidades)", texto);
         Assert.Contains("20 tipos documentales", texto);
         Assert.Contains("Cargar catálogo estándar", texto);
         Assert.Contains("solo agrega", texto, StringComparison.OrdinalIgnoreCase);
