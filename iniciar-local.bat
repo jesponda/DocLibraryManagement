@@ -14,7 +14,7 @@ rem    SIN_NAVEGADOR  Si existe, no abre el navegador al iniciar.
 rem    SIN_PAUSA      Si existe, no espera una tecla al terminar al hacer doble clic.
 rem
 rem  Siempre arranca en entorno Development: crea y migra la base de datos de
-rem  desarrollo sola y muestra la pantalla de usuarios simulados (sin contrasena).
+rem  desarrollo sola (SQL Server LocalDB) y pide usuario y contrasena (admin). NO es para servidores.
 rem ============================================================================
 setlocal EnableExtensions
 cd /d "%~dp0"
@@ -52,7 +52,7 @@ if errorlevel 1 goto :fallo
 set "ASPNETCORE_ENVIRONMENT=Development"
 echo.
 echo Iniciando en http://localhost:%PUERTO%   (Ctrl+C para detener)
-echo Entra con un usuario simulado; "Cambiar usuario" arriba a la derecha prueba otro rol.
+echo Entra con el usuario admin (contrasena temporal en appsettings.Development.json); la aplicacion te pedira cambiarla.
 echo.
 call :abrir_navegador
 dotnet run --project DocLibraryManagement --no-launch-profile -- --urls "http://localhost:%PUERTO%"
@@ -67,8 +67,8 @@ call :puerto_libre
 if errorlevel 1 goto :fallo
 
 echo.
-echo ADVERTENCIA: esto expone la aplicacion a OTROS equipos de la red SIN contrasena.
-echo En modo de desarrollo cualquiera que llegue al puerto puede entrar como Administrador.
+echo ADVERTENCIA: esto expone una instancia de DESARROLLO a OTROS equipos de la red (base LocalDB de pruebas).
+echo No es para un servidor: para eso usa scriptsdesplegar.ps1. Cualquiera que llegue al puerto vera la pantalla de acceso.
 echo Usalo solo para pruebas y limita el firewall a la IP del otro equipo.
 echo.
 set "RESP="
@@ -152,6 +152,14 @@ if errorlevel 1 (
 if not exist "DocLibraryManagement\DocLibraryManagement.csproj" (
     echo [ERROR] No se encontro DocLibraryManagement\DocLibraryManagement.csproj
     echo         Este archivo debe estar en la carpeta raiz de la solucion.
+    exit /b 1
+)
+where sqllocaldb >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Este modo usa SQL Server LocalDB para la base de desarrollo y no esta instalado en este equipo.
+    echo         Si esto es un SERVIDOR, no uses este archivo: se despliega con scripts\desplegar.ps1 y la tarea programada
+    echo         DocLibrary-V2 ^(Start-ScheduledTask DocLibrary-V2^). Ver docs\GUIA-ADMINISTRADOR.md.
     exit /b 1
 )
 for /f "delims=" %%v in ('dotnet --version 2^>nul') do set "VERSION=%%v"
