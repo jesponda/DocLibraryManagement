@@ -34,7 +34,24 @@ if ($Conexion -notmatch 'Trusted_Connection|Integrated Security') {
 
 $herramientas = Join-Path $Destino 'herramientas'
 New-Item -ItemType Directory -Force -Path $herramientas, $CarpetaRespaldos | Out-Null
-Copy-Item (Join-Path $PSScriptRoot 'respaldar.ps1'), (Join-Path $PSScriptRoot 'vigilar.ps1') -Destination $herramientas -Force
+Copy-Item (Join-Path $PSScriptRoot 'respaldar.ps1'), (Join-Path $PSScriptRoot 'vigilar.ps1'), (Join-Path $PSScriptRoot 'sgd.ps1') -Destination $herramientas -Force
+
+# El respaldo corre como SYSTEM. BACKUP necesita ser db_owner (ya lo da desplegar.ps1), pero RESTORE VERIFYONLY, que comprueba
+# que el .bak no este danado, exige ademas el rol de servidor dbcreator. Se le da aqui (requiere que quien ejecuta sea sysadmin).
+if ($Conexion -match 'Trusted_Connection\s*=\s*(True|Yes|SSPI)|Integrated Security') {
+    try {
+        $maestra = New-Object System.Data.SqlClient.SqlConnectionStringBuilder($Conexion)
+        $maestra['Initial Catalog'] = 'master'
+        $cn = New-Object System.Data.SqlClient.SqlConnection($maestra.ConnectionString)
+        $cn.Open(); $cmd = $cn.CreateCommand()
+        $cmd.CommandText = "IF SUSER_ID(N'NT AUTHORITY\SYSTEM') IS NULL CREATE LOGIN [NT AUTHORITY\SYSTEM] FROM WINDOWS; ALTER SERVER ROLE dbcreator ADD MEMBER [NT AUTHORITY\SYSTEM];"
+        [void]$cmd.ExecuteNonQuery(); $cn.Close()
+        Write-Host 'Permiso para verificar respaldos: concedido a SYSTEM (dbcreator).'
+    }
+    catch {
+        Write-Warning "No se pudo dar el permiso de verificacion a SYSTEM ($($_.Exception.Message)). El respaldo fallara al verificar: ejecuta este script con una cuenta sysadmin de SQL Server."
+    }
+}
 
 $pwsh = (Get-Command powershell.exe).Source
 $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest

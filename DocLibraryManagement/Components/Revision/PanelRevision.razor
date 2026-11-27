@@ -136,7 +136,7 @@ else
                 }
                 @if (puedeEditar)
                 {
-                    <div><InputFile OnChange="@(e => SubirAsync(e, TipoArchivo.Fuente))" accept=".doc,.docx,.xls,.xlsx,.xlsm,.odt,.ods" class="form-control form-control-sm mt-1" aria-label="Subir fuente editable" /></div>
+                    <div><InputFile OnChange="@(e => SubirAsync(e, TipoArchivo.Fuente))" accept=".doc,.docx,.xls,.xlsx,.xlsm,.ppt,.pptx,.pptm,.odt,.ods,.odp" class="form-control form-control-sm mt-1" aria-label="Subir fuente editable" /></div>
                 }
             </div>
             @if (puedeEditar)

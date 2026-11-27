@@ -40,7 +40,7 @@ La revisión (`Rev.00`, `Rev.01`…) **no** es parte del código. El consecutivo
 1. Menú **Nuevo documento**.
 2. Elige **área → subárea → tipo** y escribe el **título**. Verás la **vista previa del código**.
 3. Crea el documento: queda en **Borrador** (Rev.00).
-4. Sube el **PDF** (y, si quieres, el archivo fuente editable).
+4. Sube el **PDF** (y, si quieres, el archivo fuente editable: Word, Excel o PowerPoint, además de los formatos OpenDocument; hasta 50 MB).
 5. Inicia el flujo: asigna a quien **revisa** y a quien **aprueba**.
 6. Sigue su avance en **Documentos**. Si lo rechazan, verás el comentario, corriges y lo reenvías.
 

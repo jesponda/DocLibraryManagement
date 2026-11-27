@@ -52,7 +52,8 @@ public static class ReglasArchivo
 {
     public const int BytesDeCabecera = 16;
 
-    private static readonly string[] ExtensionesFuente = [".doc", ".docx", ".xls", ".xlsx", ".xlsm", ".odt", ".ods"];
+    private static readonly string[] ExtensionesFuente =
+        [".doc", ".docx", ".xls", ".xlsx", ".xlsm", ".ppt", ".pptx", ".pptm", ".odt", ".ods", ".odp"];
 
     private static readonly byte[] FirmaPdf = "%PDF-"u8.ToArray();
     private static readonly byte[] FirmaZip = [0x50, 0x4B, 0x03, 0x04];
@@ -73,7 +74,7 @@ public static class ReglasArchivo
         return ExtensionesFuente.Contains(extension)
             ? extension
             : throw new ReglaNegocioException(
-                $"La fuente editable debe ser un archivo de Word, Excel o equivalente ({string.Join(", ", ExtensionesFuente)}).");
+                $"La fuente editable debe ser un archivo de Word, Excel, PowerPoint o equivalente ({string.Join(", ", ExtensionesFuente)}).");
     }
 
     /// <summary>
@@ -85,8 +86,8 @@ public static class ReglasArchivo
         var valido = extension switch
         {
             ".pdf" => Empieza(cabecera, FirmaPdf),
-            ".doc" or ".xls" => Empieza(cabecera, FirmaOle),
-            ".docx" or ".xlsx" or ".xlsm" or ".odt" or ".ods" => Empieza(cabecera, FirmaZip),
+            ".doc" or ".xls" or ".ppt" => Empieza(cabecera, FirmaOle),
+            ".docx" or ".xlsx" or ".xlsm" or ".pptx" or ".pptm" or ".odt" or ".ods" or ".odp" => Empieza(cabecera, FirmaZip),
             _ => false,
         };
 
@@ -105,8 +106,12 @@ public static class ReglasArchivo
         ".xls" => "application/vnd.ms-excel",
         ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ".xlsm" => "application/vnd.ms-excel.sheet.macroEnabled.12",
+        ".ppt" => "application/vnd.ms-powerpoint",
+        ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".pptm" => "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
         ".odt" => "application/vnd.oasis.opendocument.text",
         ".ods" => "application/vnd.oasis.opendocument.spreadsheet",
+        ".odp" => "application/vnd.oasis.opendocument.presentation",
         _ => "application/octet-stream",
     };
 

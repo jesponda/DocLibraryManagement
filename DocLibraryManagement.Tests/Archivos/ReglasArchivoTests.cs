@@ -40,6 +40,10 @@ public class ReglasArchivoTests
     [InlineData("a.xlsm")]
     [InlineData("a.odt")]
     [InlineData("a.ods")]
+    [InlineData("a.ppt")]
+    [InlineData("a.PPTX")]
+    [InlineData("a.pptm")]
+    [InlineData("a.odp")]
     public void La_fuente_acepta_formatos_de_oficina(string nombre)
     {
         Assert.NotNull(ReglasArchivo.ValidarExtension(TipoArchivo.Fuente, nombre));
@@ -52,6 +56,8 @@ public class ReglasArchivoTests
     [InlineData("a.ps1")]
     [InlineData("a.html")]
     [InlineData("a.js")]
+    [InlineData("a.pps")]
+    [InlineData("a.ppsm")]
     public void La_fuente_rechaza_ejecutables_scripts_y_otros(string nombre)
     {
         Assert.Throws<ReglaNegocioException>(() => ReglasArchivo.ValidarExtension(TipoArchivo.Fuente, nombre));
@@ -65,6 +71,10 @@ public class ReglasArchivoTests
         ReglasArchivo.ValidarCabecera(".xlsx", Zip);
         ReglasArchivo.ValidarCabecera(".xlsm", Zip);
         ReglasArchivo.ValidarCabecera(".odt", Zip);
+        ReglasArchivo.ValidarCabecera(".pptx", Zip);
+        ReglasArchivo.ValidarCabecera(".pptm", Zip);
+        ReglasArchivo.ValidarCabecera(".odp", Zip);
+        ReglasArchivo.ValidarCabecera(".ppt", Ole);
         ReglasArchivo.ValidarCabecera(".doc", Ole);
         ReglasArchivo.ValidarCabecera(".xls", Ole);
     }
@@ -90,6 +100,8 @@ public class ReglasArchivoTests
     {
         Assert.Throws<ReglaNegocioException>(() => ReglasArchivo.ValidarCabecera(".docx", Pdf)); // un PDF disfrazado de Word
         Assert.Throws<ReglaNegocioException>(() => ReglasArchivo.ValidarCabecera(".doc", Zip)); // docx con extensión .doc
+        Assert.Throws<ReglaNegocioException>(() => ReglasArchivo.ValidarCabecera(".pptx", Pdf)); // un PDF disfrazado de PowerPoint
+        Assert.Throws<ReglaNegocioException>(() => ReglasArchivo.ValidarCabecera(".ppt", Zip)); // pptx con extensión .ppt
         Assert.Throws<ReglaNegocioException>(() => ReglasArchivo.ValidarCabecera(".pdf", Zip));
     }
 
@@ -102,6 +114,9 @@ public class ReglasArchivoTests
     [Theory]
     [InlineData(".pdf", "application/pdf")]
     [InlineData(".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    [InlineData(".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation")]
+    [InlineData(".ppt", "application/vnd.ms-powerpoint")]
+    [InlineData(".odp", "application/vnd.oasis.opendocument.presentation")]
     [InlineData(".desconocida", "application/octet-stream")]
     public void El_tipo_de_contenido_se_deduce_de_la_extension(string extension, string esperado)
     {
