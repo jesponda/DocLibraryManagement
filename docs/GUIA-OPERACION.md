@@ -36,7 +36,19 @@ cd C:\Apps\DocLibrary-V2\herramientas      # (o C:\Repos\DocLibraryManagement\sc
 .\sgd.ps1 log 60        # últimas 60 líneas del registro de la app
 .\sgd.ps1 respaldar     # respaldo ahora mismo, con su resultado
 ```
-Si PowerShell bloquea el script: `powershell -NoProfile -ExecutionPolicy Bypass -File .\sgd.ps1 estado`.
+**Si PowerShell dice «running scripts is disabled on this system»** (la política de ejecución del servidor bloquea los scripts), antepón el
+modo `Bypass`, que aplica solo a esa ejecución y no cambia la configuración del servidor:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\sgd.ps1 estado
+```
+Lo mismo vale para **todos** los scripts de esta guía (`desplegar.ps1`, `programar-tareas.ps1`, `respaldar.ps1`, `restablecer-admin.ps1`).
+Para escribir menos, define un atajo en la ventana (dura mientras esté abierta):
+```powershell
+function sgd { powershell -NoProfile -ExecutionPolicy Bypass -File C:\Apps\DocLibrary-V2\herramientas\sgd.ps1 @args }
+sgd estado        # y luego:  sgd reiniciar,  sgd log 60,  sgd respaldar ...
+```
+Para tenerlo siempre, agrégalo al perfil: `Add-Content -Path $PROFILE -Value 'function sgd { powershell -NoProfile -ExecutionPolicy Bypass -File C:\Apps\DocLibrary-V2\herramientas\sgd.ps1 @args }'`
+(si `$PROFILE` no existe: `New-Item -ItemType File -Force $PROFILE` antes).
 
 `estado` marca en rojo lo que requiere atención: tarea inexistente o desactivada, app sin responder, **más de 30 h sin respaldo**, menos de 5 GB libres.
 
